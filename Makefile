@@ -111,5 +111,23 @@ $(CUDA_BATCH_OBJ): $(CUDA_BATCH_SRC) $(HDC_CORE_HDR) $(HDC_HDR) | $(BUILD_DIR)
 $(CUDA_SO): $(HDC_CORE_OBJ) $(CUDA_OBJ) $(CUDA_BATCH_OBJ) $(HDC_OBJ)
 	$(CC) -shared -o $(CUDA_SO) $(HDC_CORE_OBJ) $(CUDA_OBJ) $(CUDA_BATCH_OBJ) $(HDC_OBJ) $(LDFLAGS) -ldl
 
+# --- CUDA (nvcc native build) ---
+CUDA_NATIVE_SRC = $(SRC_DIR)/addernet_cuda.cu
+CUDA_NATIVE_SO  = $(BUILD_DIR)/libaddernet_cuda.so
+
+NVCC := $(shell command -v nvcc 2> /dev/null)
+
+ifdef NVCC
+all: addernet hdc cuda_native
+
+$(CUDA_NATIVE_SO): $(CUDA_NATIVE_SRC) $(HDC_CORE_HDR) $(HDC_HDR) | $(BUILD_DIR)
+	nvcc -O3 -Xcompiler -fPIC -shared $(CUDA_NATIVE_SRC) -o $(CUDA_NATIVE_SO) -I$(SRC_DIR) $(HDC_OBJ) $(HDC_CORE_OBJ) $(HDC_LSH_OBJ)
+
+cuda_native: $(CUDA_NATIVE_SO)
+else
+cuda_native:
+	@echo "nvcc not found. Skipping libaddernet_cuda.so build."
+endif
+
 clean:
 	rm -rf $(BUILD_DIR)

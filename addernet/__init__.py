@@ -26,9 +26,10 @@ from .addernet import AdderNetLayer
 from .addernet_hdc import AdderNetHDC, hdc_detect_backend
 from .cluster import AdderCluster
 from .boost import AdderBoost
+from .attention import AdderAttention
 
 AnHdcModel = AdderNetHDC
 
-__version__ = "1.0.8"
+__version__ = "1.0.9"
 __all__ = ["AdderNetLayer", "AdderNetHDC", "AnHdcModel", "hdc_detect_backend",
-           "AdderCluster", "AdderBoost"]
+           "AdderCluster", "AdderBoost", "AdderAttention"]

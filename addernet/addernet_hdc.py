@@ -98,6 +98,15 @@ _lib.an_hdc_predict_batch_avx.argtypes = [
     ctypes.c_int,
 ]
 
+if _lib_cuda is not None:
+    _lib_cuda.an_hdc_predict_batch_cuda.restype = ctypes.c_int
+    _lib_cuda.an_hdc_predict_batch_cuda.argtypes = [
+        _AnHdcPtr,
+        ctypes.POINTER(ctypes.c_double),
+        ctypes.POINTER(ctypes.c_int),
+        ctypes.c_int,
+    ]
+
 _lib.an_hdc_save.restype = ctypes.c_int
 _lib.an_hdc_save.argtypes = [_AnHdcPtr, ctypes.c_char_p]
 
@@ -415,12 +424,23 @@ class AdderNetHDC:
             X = X.reshape(-1, self._n_vars)
         n = X.shape[0]
         outputs = np.empty(n, dtype=np.int32)
-        _lib.an_hdc_predict_batch(
-            self._ptr,
-            X.ctypes.data_as(ctypes.POINTER(ctypes.c_double)),
-            outputs.ctypes.data_as(ctypes.POINTER(ctypes.c_int)),
-            n,
-        )
+        
+        if getattr(self, 'use_gpu', False):
+            if _lib_cuda is None:
+                raise RuntimeError("CUDA backend requested but libaddernet_cuda.so not found")
+            _lib_cuda.an_hdc_predict_batch_cuda(
+                self._ptr,
+                X.ctypes.data_as(ctypes.POINTER(ctypes.c_double)),
+                outputs.ctypes.data_as(ctypes.POINTER(ctypes.c_int)),
+                n,
+            )
+        else:
+            _lib.an_hdc_predict_batch(
+                self._ptr,
+                X.ctypes.data_as(ctypes.POINTER(ctypes.c_double)),
+                outputs.ctypes.data_as(ctypes.POINTER(ctypes.c_int)),
+                n,
+            )
         return outputs
 
     def predict_batch_avx(self, X):
@@ -686,3 +706,4 @@ def hdc_detect_backend():
     """
     backends = ["SCALAR", "AVX2", "NEON"]
     return backends[_lib.hdc_detect_backend()]
+ackends[_lib.hdc_detect_backend()]
