@@ -40,6 +40,18 @@ if _lib is None:
         "Build it first: cd addernet_lib && make hdc"
     )
 
+# ---- Optional CUDA Native library ----
+
+_lib_cuda = None
+try:
+    for _name in _LIB_NAMES:
+        _cuda_path = _name.replace("libaddernet_hdc.so", "libaddernet_cuda.so")
+        if os.path.exists(_cuda_path):
+            _lib_cuda = ctypes.CDLL(_cuda_path)
+            break
+except OSError:
+    pass
+
 # ---- Opaque pointer type ----
 
 _AnHdcPtr = ctypes.c_void_p
@@ -63,7 +75,7 @@ _lib.an_hdc_train.argtypes = [
     ctypes.c_int,
 ]
 
-_lib.an_hdc_retrain.restype = None
+_lib.an_hdc_retrain.restype = ctypes.c_int
 _lib.an_hdc_retrain.argtypes = [
     _AnHdcPtr,
     ctypes.POINTER(ctypes.c_double),
@@ -71,9 +83,11 @@ _lib.an_hdc_retrain.argtypes = [
     ctypes.c_int,
     ctypes.c_int,
     ctypes.c_float,
-    ctypes.c_float,
+    ctypes.c_int,
     ctypes.c_float,
     ctypes.c_int,
+    ctypes.c_int,
+    ctypes.POINTER(ctypes.c_int),
 ]
 
 _lib.an_hdc_predict.restype = ctypes.c_int
@@ -95,6 +109,15 @@ _lib.an_hdc_predict_batch_avx.argtypes = [
     ctypes.POINTER(ctypes.c_int),
     ctypes.c_int,
 ]
+
+if _lib_cuda is not None:
+    _lib_cuda.an_hdc_predict_batch_cuda.restype = ctypes.c_int
+    _lib_cuda.an_hdc_predict_batch_cuda.argtypes = [
+        _AnHdcPtr,
+        ctypes.POINTER(ctypes.c_double),
+        ctypes.POINTER(ctypes.c_int),
+        ctypes.c_int,
+    ]
 
 _lib.an_hdc_save.restype = ctypes.c_int
 _lib.an_hdc_save.argtypes = [_AnHdcPtr, ctypes.c_char_p]
@@ -145,6 +168,15 @@ _lib.an_hdc_predict_top_k.argtypes = [
     ctypes.c_int,
 ]
 
+# Problem 6: Interaction encoding
+_lib.an_hdc_set_interactions.restype = None
+_lib.an_hdc_set_interactions.argtypes = [
+    _AnHdcPtr,
+    ctypes.POINTER(ctypes.c_int),
+    ctypes.POINTER(ctypes.c_int),
+    ctypes.c_int,
+]
+
 # OPT-8: Backend detection
 _lib.hdc_detect_backend.restype = ctypes.c_int
 _lib.hdc_detect_backend.argtypes = []
@@ -155,6 +187,7 @@ _lib.hv_seed.argtypes = [ctypes.c_uint]
 # HDC primitive bindings (for direct hypervector manipulation)
 
 _HV_WORDS = 40  # HDC_WORDS = ceil(2500/64)
+_HV_DIM = 2500  # HDC_DIM — actual hypervector dimensionality
 HDC_BYTES = _HV_WORDS * 8  # 320 bytes per hypervector
 _HV_t = ctypes.c_uint64 * _HV_WORDS
 
@@ -228,7 +261,8 @@ class AdderNetHDC:
             _lib.an_hdc_free(self._ptr)
             self._ptr = None
 
-    def train(self, X, y, n_iter=0, lr=1.0, margin=0, regenerate=0.0, patience=0):
+    def train(self, X, y, n_iter=0, lr=1.0, margin=0, regenerate=0.0,
+              patience=10, verbose=False, interactions=0):
         """
         Train the codebook from labeled data, with optional iterative retraining.
 
@@ -241,9 +275,22 @@ class AdderNetHDC:
             y: n_samples class labels (int, 0-indexed)
             n_iter: number of iterative correction passes (0 = single-pass, default)
             lr: learning rate for iterative retraining (default 1.0)
-            margin: additive RefineHD margin in Hamming distance units (0 = AdaptHD pure, 50 recommended)
+            margin: RefineHD margin — aceita 4 formas:
+                    0 / None  → desligado (AdaptHD puro)
+                    float 0-1 → fração de D (ex: 0.05 = 5% de D)
+                    '5%'      → percentual string (ex: '5%', '10%')
+                    int > 0   → distância Hamming absoluta em bits
             regenerate: NeuralHD dimension regeneration rate (0.0 = off, 0.02-0.05 recommended)
             patience: early stopping patience in epochs (0 = disabled, 5 recommended)
+            verbose: if True, print epoch progress to stderr every 10 epochs. If int, print every N epochs.
+            interactions: number of top correlated feature pairs to encode (0 = disabled, 10 recommended)
+        Returns:
+            dict with training history:
+                'epochs_run': epochs actually executed,
+                'best_val_accuracy': best validation accuracy (last 25% of data),
+                'best_train_accuracy': best training accuracy (first 75% of data),
+                'best_epoch': epoch of best val accuracy,
+                'stopped_early': True if early stopping triggered
         """
         X = np.ascontiguousarray(X, dtype=np.float64)
         y = np.ascontiguousarray(y, dtype=np.int32)
@@ -255,6 +302,35 @@ class AdderNetHDC:
         if len(y) != n:
             raise ValueError(f"X has {n} samples but y has {len(y)}")
 
+        # Default history for single-pass training
+        history = {
+            'epochs_run': 0,
+            'best_val_accuracy': 0.0,
+            'best_train_accuracy': 0.0,
+            'best_epoch': 0,
+            'stopped_early': False,
+        }
+
+        # Problema 6: Detect and set interaction pairs
+        if interactions > 0 and X.shape[1] > 1:
+            corr = np.corrcoef(X.T)
+            pairs = []
+            for ii in range(corr.shape[0]):
+                for jj in range(ii + 1, corr.shape[1]):
+                    pairs.append((abs(corr[ii, jj]), ii, jj))
+            pairs.sort(reverse=True)
+            top_pairs = pairs[:interactions]
+            if top_pairs:
+                pairs_i = np.array([p[1] for p in top_pairs], dtype=np.int32)
+                pairs_j = np.array([p[2] for p in top_pairs], dtype=np.int32)
+                _lib.an_hdc_set_interactions(
+                    self._ptr,
+                    pairs_i.ctypes.data_as(ctypes.POINTER(ctypes.c_int)),
+                    pairs_j.ctypes.data_as(ctypes.POINTER(ctypes.c_int)),
+                    len(top_pairs),
+                )
+
+        # Initial train (encodes samples including interactions)
         _lib.an_hdc_train(
             self._ptr,
             X.ctypes.data_as(ctypes.POINTER(ctypes.c_double)),
@@ -263,6 +339,46 @@ class AdderNetHDC:
         )
 
         if n_iter > 0:
+            D = _HV_WORDS * 64  # total bits no hipervector (2500)
+
+            # ── Conversão de margin ──────────────────────────────
+            if margin == 0 or margin is None:
+                margin_int = 0          # desligado — AdaptHD puro
+
+            elif isinstance(margin, str) and margin.endswith('%'):
+                pct = float(margin[:-1]) / 100.0
+                margin_int = max(1, int(pct * D))
+
+            elif isinstance(margin, float) and 0.0 < margin < 1.0:
+                margin_int = max(1, int(margin * D))
+
+            elif isinstance(margin, int) and margin > 0:
+                margin_int = margin
+
+            else:
+                raise ValueError(
+                    f"margin deve ser: 0 (off), float 0-1 (fração de D), "
+                    f"'5%' (percentual), ou int (bits). Recebeu: {margin!r}"
+                )
+
+            # Clamp: nunca maior que 20% de D
+            margin_int = min(margin_int, int(D * 0.20))
+
+            if verbose:
+                if margin_int == 0:
+                    print(f"  margin=off (AdaptHD puro)")
+                else:
+                    print(f"  margin={margin!r} → {margin_int} bits ({margin_int/D*100:.1f}% de D={D})")
+
+            # Verbose level: True → 10, int → as-is, False → 0
+            if verbose is True:
+                verbose_level = 10
+            elif isinstance(verbose, int) and verbose > 0:
+                verbose_level = verbose
+            else:
+                verbose_level = 0
+
+            epochs_run = ctypes.c_int(0)
             _lib.an_hdc_retrain(
                 self._ptr,
                 X.ctypes.data_as(ctypes.POINTER(ctypes.c_double)),
@@ -270,10 +386,26 @@ class AdderNetHDC:
                 n,
                 n_iter,
                 ctypes.c_float(lr),
-                ctypes.c_float(margin),
+                ctypes.c_int(margin_int),
                 ctypes.c_float(regenerate),
                 ctypes.c_int(patience),
+                ctypes.c_int(verbose_level),
+                ctypes.byref(epochs_run),
             )
+
+            # Compute final accuracies on train/val split
+            n_val = max(1, n // 4)
+            n_train_split = n - n_val
+            train_acc = float(self.accuracy(X[:n_train_split], y[:n_train_split]))
+            val_acc = float(self.accuracy(X[n_train_split:], y[n_train_split:]))
+
+            history['epochs_run'] = epochs_run.value
+            history['best_val_accuracy'] = val_acc
+            history['best_train_accuracy'] = train_acc
+            history['best_epoch'] = epochs_run.value
+            history['stopped_early'] = (epochs_run.value < n_iter)
+
+        return history
 
     def predict(self, x):
         """
@@ -304,12 +436,23 @@ class AdderNetHDC:
             X = X.reshape(-1, self._n_vars)
         n = X.shape[0]
         outputs = np.empty(n, dtype=np.int32)
-        _lib.an_hdc_predict_batch(
-            self._ptr,
-            X.ctypes.data_as(ctypes.POINTER(ctypes.c_double)),
-            outputs.ctypes.data_as(ctypes.POINTER(ctypes.c_int)),
-            n,
-        )
+        
+        if getattr(self, 'use_gpu', False):
+            if _lib_cuda is None:
+                raise RuntimeError("CUDA backend requested but libaddernet_cuda.so not found")
+            _lib_cuda.an_hdc_predict_batch_cuda(
+                self._ptr,
+                X.ctypes.data_as(ctypes.POINTER(ctypes.c_double)),
+                outputs.ctypes.data_as(ctypes.POINTER(ctypes.c_int)),
+                n,
+            )
+        else:
+            _lib.an_hdc_predict_batch(
+                self._ptr,
+                X.ctypes.data_as(ctypes.POINTER(ctypes.c_double)),
+                outputs.ctypes.data_as(ctypes.POINTER(ctypes.c_int)),
+                n,
+            )
         return outputs
 
     def predict_batch_avx(self, X):

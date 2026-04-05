@@ -40,6 +40,18 @@ if _lib is None:
         "Build it first: cd addernet_lib && make hdc"
     )
 
+# ---- Optional CUDA Native library ----
+
+_lib_cuda = None
+try:
+    for _name in _LIB_NAMES:
+        _cuda_path = _name.replace("libaddernet_hdc.so", "libaddernet_cuda.so")
+        if os.path.exists(_cuda_path):
+            _lib_cuda = ctypes.CDLL(_cuda_path)
+            break
+except OSError:
+    pass
+
 # ---- Opaque pointer type ----
 
 _AnHdcPtr = ctypes.c_void_p
@@ -706,4 +718,3 @@ def hdc_detect_backend():
     """
     backends = ["SCALAR", "AVX2", "NEON"]
     return backends[_lib.hdc_detect_backend()]
-ackends[_lib.hdc_detect_backend()]

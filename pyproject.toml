@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "addernet"
-version = "1.2.0"
+version = "1.2.1"
 description = "Neural networks with zero multiplications at inference. AdderNet + HDC for embedded systems."
 readme = "README.md"
 license = { text = "Apache-2.0" }
