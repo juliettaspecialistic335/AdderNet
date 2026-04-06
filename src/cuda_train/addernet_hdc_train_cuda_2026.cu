@@ -430,6 +430,7 @@ static void alloc_unified_buffers(cuda_buffers *buf, int n, int nv, int nc,
                                   int16_t *h_cb_counts_init,
                                   uint64_t *h_position_hvs) {
     cudaError_t err;
+    int device = 0;  /* Must be before any goto that skips prefetch */
     buf->managed = 0;
     buf->d_bins = NULL;
     buf->d_y_true = NULL;
@@ -464,7 +465,6 @@ static void alloc_unified_buffers(cuda_buffers *buf, int n, int nv, int nc,
     if (err != cudaSuccess) goto fallback;
 
     /* Prefetch to GPU for faster first access */
-    int device = 0;
     cudaGetDevice(&device);
     cudaMemPrefetchAsync(buf->d_bins, bins_sz, device, 0);
     cudaMemPrefetchAsync(buf->d_cb_binary, cb_bin_sz, device, 0);
