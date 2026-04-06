@@ -35,6 +35,8 @@
  * Shared memory tiering
  * ========================================================== */
 
+/* Reserved for future shared memory tiering — suppress unused warning */
+__attribute__((unused))
 static size_t get_shared_memory_bytes(int hv_words, int n_classes, int n_vars, int capability) {
     /* Required for codebook cache: n_classes * hv_words * 8 bytes */
     size_t cb_size = (size_t)n_classes * hv_words * 8;
@@ -74,6 +76,7 @@ static size_t get_shared_memory_bytes(int hv_words, int n_classes, int n_vars, i
     __shfl_down((var), (delta))
 #endif
 
+__attribute__((unused))
 __device__ static int warp_reduce_add(int val, int width) {
     for (int offset = 16; offset > 0; offset /= 2) {
         val += WARP_SHFL_DOWN(val, offset, 0xFFFFFFFF);
@@ -393,7 +396,7 @@ __global__ void predict_and_update_kernel(
  * CUDA Graphs support (Phase 5)
  * ========================================================== */
 
-/* Graph instances are lazily created on first epoch */
+/* Reserved for future CUDA Graphs support */
 typedef struct {
     cudaGraph_t graph;
     cudaGraphExec_t instance;
@@ -404,7 +407,7 @@ typedef struct {
     int16_t lr_int;
     int margin;
 } cuda_graph_cache;
-
+__attribute__((unused))
 static cuda_graph_cache G_graph = {0};
 
 /* ==========================================================
@@ -585,7 +588,6 @@ extern "C" int an_hdc_retrain_cuda(an_hdc_model *m, const double *X, const int *
         }
     }
 
-    size_t pos_hv_sz = (size_t)nv * nw * sizeof(uint64_t);
     alloc_unified_buffers(&buf, n_train, nv, nc, nw, nd,
                           m->codebook, h_cb_counts, m->position_hvs);
 
