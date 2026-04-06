@@ -53,6 +53,8 @@ class CUDADetector:
     ]
 
     # Library names to search for runtime
+    # IMPORTANT: libcuda.so.1 (driver) must come before libcudart.so (runtime)
+    # because we need the driver for cuInit/cuDeviceGet via ctypes
     CUDA_LIBS = [
         "libcuda.so.1",
         "libcuda.so",
@@ -230,49 +232,49 @@ class CUDADetector:
             pass
 
     def _detect_runtime_lib(self):
-        """Find libcuda.so or libcudart.so."""
-        # Check LD_LIBRARY_PATH
-        if "LD_LIBRARY_PATH" in os.environ:
-            for path in os.environ["LD_LIBRARY_PATH"].split(':'):
-                for lib_name in self.CUDA_LIBS:
-                    full_path = os.path.join(path, lib_name)
-                    if os.path.exists(full_path):
-                        self.libcuda_path = full_path
-                        return
-
-        # Check common library paths
-        lib_paths = [
+        """Find libcuda.so.1 (driver) — required for GPU capability detection."""
+        # CRITICAL: Check system paths for libcuda.so.1 FIRST.
+        # libcuda.so.1 is the NVIDIA DRIVER library, NOT the CUDA toolkit.
+        # It lives in /usr/lib/..., NOT in /usr/local/cuda/lib64/.
+        # /usr/local/cuda/lib64/ only has libcudart.so (runtime), which lacks
+        # cuInit/cuDeviceGet — we need the DRIVER for ctypes GPU detection.
+        system_paths = [
             "/usr/lib/x86_64-linux-gnu",
             "/usr/lib64",
-            "/usr/local/cuda/lib64",
-            "/opt/cuda/lib64",
-            "$CONDA_PREFIX/lib",
-            "$CONDA_PREFIX/lib64",
+            "/usr/lib/aarch64-linux-gnu",
+            "/usr/local/nvidia/lib64",   # Kaggle
+            "/usr/local/nvidia/lib",
         ]
 
-        for path_template in lib_paths:
-            for path in self._expand_path(path_template):
-                for lib_name in self.CUDA_LIBS:
+        for path in system_paths:
+            full_path = os.path.join(path, "libcuda.so.1")
+            if os.path.exists(full_path):
+                self.libcuda_path = full_path
+                return
+
+        # Fallback: check LD_LIBRARY_PATH (may have libcudart but not libcuda)
+        if "LD_LIBRARY_PATH" in os.environ:
+            for path in os.environ["LD_LIBRARY_PATH"].split(':'):
+                full_path = os.path.join(path, "libcuda.so.1")
+                if os.path.exists(full_path):
+                    self.libcuda_path = full_path
+                    return
+
+        # Last resort: accept libcudart.so (won't support ctypes GPU detection)
+        for lib_name in ["libcudart.so.12", "libcudart.so.11", "libcudart.so"]:
+            if "LD_LIBRARY_PATH" in os.environ:
+                for path in os.environ["LD_LIBRARY_PATH"].split(':'):
                     full_path = os.path.join(path, lib_name)
                     if os.path.exists(full_path):
                         self.libcuda_path = full_path
                         return
 
-        # Try pip package libraries
-        try:
-            import site
-            for site_dir in site.getsitepackages():
-                site_path = Path(site_dir)
-                for pattern in [
-                    site_path / "nvidia" / "cuda_runtime" / "lib" / "libcudart.so*",
-                    site_path / "nvidia_cuda_runtime_cu*" / "lib" / "libcudart.so*",
-                ]:
-                    matches = list(site_path.glob(str(pattern)))
-                    if matches:
-                        self.libcuda_path = str(matches[0])
+            for path_template in ["/usr/local/cuda/lib64", "/usr/local/cuda/lib"]:
+                for path in self._expand_path(path_template):
+                    full_path = os.path.join(path, lib_name)
+                    if os.path.exists(full_path):
+                        self.libcuda_path = full_path
                         return
-        except:
-            pass
 
     def _detect_gpu_capability(self):
         """

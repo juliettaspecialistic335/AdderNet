@@ -12,6 +12,8 @@ import os, sys, json, time, gc, subprocess, shutil, math
 import numpy as np
 from pathlib import Path
 
+# psutil será importado APÓS o pip install (lazy)
+
 # ───────────────────────────────────────────────────────────────────
 # 1. CONFIGURAÇÕES
 # ───────────────────────────────────────────────────────────────────
@@ -104,6 +106,10 @@ subprocess.run(
     capture_output=True, text=True
 )
 
+# ── Agora podemos importar psutil (instalado acima) ──
+import importlib
+psutil = importlib.import_module("psutil")
+
 # ── Import ──
 sys.path.insert(0, str(KAGGLE_DIR))
 try:
@@ -121,7 +127,11 @@ except OSError as e:
     raise
 
 def now(): return time.strftime("%H:%M:%S")
-def ram_gb(): return psutil.virtual_memory().used / (1024**3)
+def ram_gb():
+    try:
+        return psutil.virtual_memory().used / (1024**3)
+    except Exception:
+        return 0.0  # fallback se psutil indisponível
 
 print("\n" + "="*70)
 print(f"  [{now()}] 🧠 AdderGPT-2 v1.4.1 | Kaggle + 2× T4")
