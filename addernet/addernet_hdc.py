@@ -189,18 +189,56 @@ def _try_build_cuda():
     return True
 
 
-_lib_cuda = None
-_LIB_CUDA_READY = False
-for _cuda_name in _CUDA_LIB_NAMES:
-    if os.path.exists(_cuda_name):
-        try:
-            _lib_cuda = ctypes.CDLL(_cuda_name)
-            print(f"[AdderNet] CUDA library loaded from {_cuda_name}")
-            _LIB_CUDA_READY = True
-            break
-        except OSError as e:
-            pass
+# ---- CUDA 2026: Capability-based kernel selection ----
+try:
+    from .cuda_detector import CUDADetector
+    _cuda_detector = CUDADetector()
+    _cuda_detector.detect()
+    _capability_int = _cuda_detector.get_capability_int()
+    _kernel_variant = _cuda_detector.get_best_kernel_variant()
+    print(f"[AdderNet 2026] Detected: {_kernel_variant} (capability={_capability_int})")
+except Exception as e:
+    _cuda_detector = None
+    _capability_int = None
+    _kernel_variant = 'legacy'
 
+# ---- Library loading with variant support ----
+_lib_cuda = None
+_lib_cuda_2026 = None
+_LIB_CUDA_READY = False
+_CUDA_VARIANT = None
+
+# Try 2026 cooperative kernel (ampere/turing specific retrain kernel)
+if _kernel_variant in ['ampere', 'turing']:
+    _CUDA_2026_NAMES = [
+        os.path.join(_HERE, f"libaddernet_cuda_{_kernel_variant}.so"),
+        os.path.join(_HERE, "libaddernet_cuda_2026.so"),
+    ]
+    for _cuda_name in _CUDA_2026_NAMES:
+        if os.path.exists(_cuda_name):
+            try:
+                _lib_cuda_2026 = ctypes.CDLL(_cuda_name)
+                print(f"[AdderNet 2026] Loaded cooperative {_kernel_variant} kernel from {_cuda_name}")
+                break
+            except OSError:
+                pass
+
+# Load generic CUDA (always needed for inference)
+
+# Fallback to generic CUDA
+if not _LIB_CUDA_READY:
+    for _cuda_name in _CUDA_LIB_NAMES:
+        if os.path.exists(_cuda_name):
+            try:
+                _lib_cuda = ctypes.CDLL(_cuda_name)
+                print(f"[AdderNet] CUDA library loaded from {_cuda_name}")
+                _LIB_CUDA_READY = True
+                _CUDA_VARIANT = 'generic'
+                break
+            except OSError:
+                pass
+
+# Try building if not found
 if not _LIB_CUDA_READY:
     if _try_build_cuda():
         for _cuda_name in _CUDA_LIB_NAMES:
@@ -209,6 +247,7 @@ if not _LIB_CUDA_READY:
                     _lib_cuda = ctypes.CDLL(_cuda_name)
                     print(f"[AdderNet] Auto-compiled CUDA library loaded from {_cuda_name}")
                     _LIB_CUDA_READY = True
+                    _CUDA_VARIANT = 'generic'
                     break
                 except OSError:
                     pass
@@ -560,24 +599,39 @@ class AdderNetHDC:
 
             epochs_run = ctypes.c_int(0)
 
-            # GPU training: usa retrain_cuda quando disponível
-            if self.use_gpu_training and _lib_cuda is not None:
-                _lib_cuda.an_hdc_retrain_cuda(
-                    self._ptr,
-                    X.ctypes.data_as(ctypes.POINTER(ctypes.c_double)),
-                    y.ctypes.data_as(ctypes.POINTER(ctypes.c_int)),
-                    n,
-                    n_iter,
-                    ctypes.c_float(lr),
-                    ctypes.c_int(margin_int),
-                    ctypes.c_int(patience),
-                    ctypes.c_int(verbose_level),
-                    ctypes.byref(epochs_run),
-                )
-            else:
-                if self.use_gpu_training:
+            # GPU training: variant selection based on capability
+            _used_gpu = False
+            if self.use_gpu_training:
+                # Phase 2: Select kernel by detected GPU capability
+                _selected_kernel = None
+
+                # Try 2026 cooperative kernel first (ampere/turing)
+                if _kernel_variant in ('ampere', 'turing') and _lib_cuda_2026 is not None:
+                    _selected_kernel = ('2026', _lib_cuda_2026)
+                # Fallback to generic CUDA retrain
+                elif _lib_cuda is not None and hasattr(_lib_cuda, 'an_hdc_retrain_cuda'):
+                    _selected_kernel = ('generic', _lib_cuda)
+
+                if _selected_kernel is not None:
+                    variant_name, cuda_lib = _selected_kernel
+                    cuda_lib.an_hdc_retrain_cuda(
+                        self._ptr,
+                        X.ctypes.data_as(ctypes.POINTER(ctypes.c_double)),
+                        y.ctypes.data_as(ctypes.POINTER(ctypes.c_int)),
+                        n,
+                        n_iter,
+                        ctypes.c_float(lr),
+                        ctypes.c_int(margin_int),
+                        ctypes.c_int(patience),
+                        ctypes.c_int(verbose_level),
+                        ctypes.byref(epochs_run),
+                    )
+                    _used_gpu = True
+                else:
                     print("[AdderNet] Warning: use_gpu_training=True but "
-                          "libaddernet_cuda.so not found. Falling back to CPU.")
+                          "no CUDA training kernel found. Falling back to CPU.")
+
+            if not _used_gpu:
                 _lib.an_hdc_retrain(
                     self._ptr,
                     X.ctypes.data_as(ctypes.POINTER(ctypes.c_double)),

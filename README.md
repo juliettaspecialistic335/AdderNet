@@ -6,7 +6,7 @@
 
 Biblioteca de machine learning que **não usa multiplicação de ponto flutuante** na inferência. Zero.
 
-> Benchmarks medidos em CPU x86-64 com backend **AVX2** e GPUs NVIDIA via **CUDA**, Python 3.x, v1.2.5.
+> Benchmarks medidos em CPU x86-64 com backend **AVX2** e GPUs NVIDIA via **CUDA 2026**, Python 3.x, v1.4.0.
 
 ---
 
@@ -23,16 +23,29 @@ A biblioteca expõe quatro componentes principais:
 | `AdderNetHDC` | Classificador multivariável — Hyperdimensional Computing (HDC) |
 | `AdderCluster` | Ensemble de `AdderNetLayer` com estratégias de combinação |
 | `AdderBoost` | Gradient Boosting com `AdderNetLayer` — inferência sem multiplicação |
+| `AdderAttention` | Attention mechanism baseado em distância de Hamming — zero multiplicação |
 
 ---
 
-## Novidades v1.2.5 🚀
+## Novidades v1.4.0 🚀
 
-- **HV_DIM Dinâmico**: A dimensionalidade hiperdimensional (`hv_dim`) agora é configurável em tempo de execução (`512`, `1024`, `2048`, `4096`, etc), sem precisar recompilar a biblioteca C!
-- **Aceleração CUDA NATIVA no Treinamento**: O loop iterativo de retreino (`AdaptHD`) foi reescrito em CUDA para ser executado massivamente em paralelo usando `atomicAdd` e otimizações de bitwise. Basta usar `use_gpu_training=True`.
-- **Aceleração CUDA na Inferência**: O processo de `predict_batch` agora tem suporte a GPU via kernels CUDA dedicados. Basta instanciar o modelo com `use_gpu=True`.
-- **Compatibilidade e Fallback**: O pacote compila nativamente o C++ e CUDA no momento do `pip install`. Se a máquina alvo (como um Raspberry Pi) não tiver placa de vídeo NVIDIA, a biblioteca roda perfeitamente fazendo fallback silencioso para CPU com `AVX2`, `NEON` ou `SCALAR`.
-- Correção de bugs de Ctypes FFI e memory alignment (agora todos os `aligned_alloc` usam arrays flats dinâmicos, preservando compatibilidade absoluta entre os tensores C contíguos e o numpy).
+### CUDA 2026 — Modernização Completa
+- **Kernel 2026 Ampere+**: Treinamento cooperativo com shared memory 100KB, warp-level primitives, e unified kernel (encode → Hamming → update em um único launch)
+- **Kernel Selection Automático**: Detecta a GPU e seleciona o kernel otimizado (Ampere sm_80+ → Turing sm_70-75 → Legacy sm_61)
+- **Unified Memory**: Zero-copy GPU memory para datasets pequenos (ativa com `ADDERNET_UNIFIED_MEMORY=1`)
+- **CUDA Graphs**: Capture once, replay many (ativa com `ADDERNET_CUDA_GRAPHS=1`)
+- **Persistent Kernel**: Elimina overhead de kernel launch (ativa com `ADDERNET_PERSISTENT_KERNEL=1`)
+
+### AdderAttention — Attention Mechanism sem Multiplicação
+- Mecanismo de atenção baseado em distância de Hamming
+- Ideal para transformers-like architectures em embedded systems
+- Sem operações de ponto flutuante
+
+### Recursos Mantidos
+- **HV_DIM Dinâmico**: Dimensionalidade hiperdimensional configurável em runtime (`512`, `1024`, `2048`, `4096`, etc)
+- **Aceleração CUDA no Treinamento**: AdaptHD/RefineHD paralelo em GPU com `atomicAdd`
+- **Aceleração CUDA na Inferência**: `predict_batch` via kernels CUDA dedicados
+- **Compatibilidade e Fallback**: Fallback automático para CPU (AVX2/NEON/SCALAR) quando GPU não disponível
 
 ---
 
@@ -139,6 +152,42 @@ cluster.fit(X, y)
 preds = cluster.predict_batch(X)
 
 cluster.info()
+```
+
+---
+
+## Uso — AdderAttention (Attention sem Multiplicação)
+
+```python
+from addernet import AdderAttention
+import numpy as np
+
+# Attention mechanism baseado em distância de Hamming
+# Ideal para embedded systems sem FPU
+attn = AdderAttention(
+    n_vars=4,
+    n_heads=8,  # Número de heads de atenção
+    hv_dim=2048  # Dimensionalidade dos hipervetores
+)
+
+# Query, Key, Value (em formato hypervector)
+# Treinamento
+attn.fit(X_train, y_train)
+
+# Attention scores usando Hamming distance
+scores = attn.attention(X_query, X_keys)
+
+# Classificação com attention
+prediction = attn.predict(X_test)
+```
+
+### Configurações Avançadas do CUDA 2026
+
+```python
+import os
+os.environ['ADDERNET_UNIFIED_MEMORY'] = '1'   # Zero-copy GPU memory
+os.environ['ADDERNET_CUDA_GRAPHS'] = '1'       # Capture/replay
+os.environ['ADDERNET_PERSISTENT_KERNEL'] = '1' # Elimina kernel launch overhead
 ```
 
 ---

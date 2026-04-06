@@ -49,7 +49,7 @@ HDC_CORE_OBJ = $(BUILD_DIR)/hdc_core.o
 HDC_LSH_OBJ  = $(BUILD_DIR)/hdc_lsh.o
 HDC_OBJ      = $(BUILD_DIR)/addernet_hdc.o
 
-.PHONY: all addernet hdc cuda test test_addernet test_hdc clean
+.PHONY: all addernet hdc cuda cuda_2026 test test_addernet test_hdc clean
 
 all: addernet hdc
 
@@ -118,7 +118,7 @@ CUDA_NATIVE_SO  = $(BUILD_DIR)/libaddernet_cuda.so
 NVCC := $(shell command -v nvcc 2> /dev/null)
 
 ifdef NVCC
-all: addernet hdc cuda_native
+all: addernet hdc cuda_native cuda_2026
 
 $(CUDA_NATIVE_SO): $(CUDA_NATIVE_SRC) $(HDC_CORE_HDR) $(HDC_HDR) | $(BUILD_DIR)
 	nvcc -O3 -Xcompiler -fPIC -shared \
@@ -132,11 +132,34 @@ cuda_native:
 	else \
 		echo "WARNING: libaddernet_cuda.so not found. Running without CUDA support."; \
 	fi
+
+# --- CUDA 2026: Cooperative retrain kernel + generic inference ---
+CUDA_2026_SRC = $(SRC_DIR)/addernet_cuda.cu $(SRC_DIR)/cuda_train/addernet_hdc_train_cuda_2026.cu
+CUDA_2026_SO  = $(BUILD_DIR)/libaddernet_cuda_2026.so
+
+$(CUDA_2026_SO): $(CUDA_2026_SRC) $(HDC_CORE_HDR) $(HDC_HDR) | $(BUILD_DIR)
+	nvcc -O3 --use_fast_math -ftz=true -prec-div=false -prec-sqrt=false \
+		-std=c++17 -Xcompiler -fPIC -Xcompiler -fopenmp -Xcompiler -ffast-math \
+		-gencode arch=compute_80,code=sm_80 \
+		-gencode arch=compute_80,code=compute_80 \
+		-shared $(CUDA_2026_SRC) -o $(CUDA_2026_SO) \
+		-I$(SRC_DIR) \
+		$(HDC_OBJ) $(HDC_CORE_OBJ) $(HDC_LSH_OBJ)
+
+cuda_2026:
+	@if [ -f "$(CUDA_2026_SO)" ]; then \
+		echo "CUDA 2026 extension built successfully (libaddernet_cuda_2026.so)."; \
+	else \
+		echo "WARNING: libaddernet_cuda_2026.so not found."; \
+	fi
 else
 all: addernet hdc
 
 cuda_native:
 	@echo "nvcc not found. Skipping libaddernet_cuda.so build."
+
+cuda_2026:
+	@echo "nvcc not found. Skipping libaddernet_cuda_2026.so build."
 endif
 
 clean:
