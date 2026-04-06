@@ -121,10 +121,20 @@ ifdef NVCC
 all: addernet hdc cuda_native
 
 $(CUDA_NATIVE_SO): $(CUDA_NATIVE_SRC) $(HDC_CORE_HDR) $(HDC_HDR) | $(BUILD_DIR)
-	nvcc -O3 -Xcompiler -fPIC -shared $(CUDA_NATIVE_SRC) -o $(CUDA_NATIVE_SO) -I$(SRC_DIR) $(HDC_OBJ) $(HDC_CORE_OBJ) $(HDC_LSH_OBJ)
+	nvcc -O3 -Xcompiler -fPIC -shared \
+		$(CUDA_NATIVE_SRC) -o $(CUDA_NATIVE_SO) \
+		-I$(SRC_DIR) \
+		$(HDC_OBJ) $(HDC_CORE_OBJ) $(HDC_LSH_OBJ)
 
-cuda_native: $(CUDA_NATIVE_SO)
+cuda_native:
+	@if [ -f "$(CUDA_NATIVE_SO)" ]; then \
+		echo "CUDA extension built successfully (libaddernet_cuda.so)."; \
+	else \
+		echo "WARNING: libaddernet_cuda.so not found. Running without CUDA support."; \
+	fi
 else
+all: addernet hdc
+
 cuda_native:
 	@echo "nvcc not found. Skipping libaddernet_cuda.so build."
 endif

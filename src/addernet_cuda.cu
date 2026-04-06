@@ -3,10 +3,8 @@
 #include <stdint.h>
 #include <cuda_runtime.h>
 
-extern "C" {
 #include "hdc_core.h"
 #include "addernet_hdc.h"
-}
 
 // ---------------------------------------------------------
 // CUDA Kernel: Hamming Distance (L1) Search

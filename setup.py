@@ -26,8 +26,10 @@ class MakeBuildExt(build_ext):
         try:
             subprocess.check_call(['make', 'all'], cwd=project_root)
         except subprocess.CalledProcessError as e:
-            print(f"Error compiling C/CUDA extensions: {e}", file=sys.stderr)
-            sys.exit(1)
+            raise RuntimeError(
+                f"Failed to compile C/CUDA extensions via Makefile. "
+                f"Ensure gcc and make are installed. Original error: {e}"
+            ) from e
             
         # 2. Setup paths
         build_dir = os.path.join(project_root, 'build')
@@ -52,7 +54,11 @@ class MakeBuildExt(build_ext):
                 self.distribution.package_data['addernet'].append(so_file)
 
         # 4. Copy the compiled shared libraries to the wheel build directory
-        for lib in so_files_to_include:
+        so_files_to_copy = ['libaddernet.so', 'libaddernet_hdc.so']
+        if os.path.exists(os.path.join(build_dir, 'libaddernet_cuda.so')):
+            so_files_to_copy.append('libaddernet_cuda.so')
+
+        for lib in so_files_to_copy:
             src_lib = os.path.join(build_dir, lib)
             if os.path.exists(src_lib):
                 dest_lib = os.path.join(pkg_dir, lib)
@@ -60,6 +66,18 @@ class MakeBuildExt(build_ext):
                 print(f"Successfully copied {lib} to {pkg_dir}")
             else:
                 print(f"Warning: Expected library {lib} not found!")
+
+        # 5. Copy C/CUDA source files into the package for runtime auto-build.
+        # This enables Colab to compile CUDA at runtime if nvcc is installed
+        # after pip install (common scenario on Colab).
+        src_dir = os.path.join(project_root, 'src')
+        if os.path.isdir(src_dir):
+            pkg_src = os.path.join(pkg_dir, 'src')
+            if os.path.exists(pkg_src):
+                shutil.rmtree(pkg_src)
+            shutil.copytree(src_dir, pkg_src,
+                           ignore=shutil.ignore_patterns('*.o', '*.so'))
+            print(f"Copied C/CUDA sources to {pkg_src} for runtime build support")
 
 # We define a dummy Extension to ensure setuptools marks the wheel as platform-specific
 ext_modules = [
@@ -71,7 +89,7 @@ if bdist_wheel is not None:
     cmdclass_dict['bdist_wheel'] = bdist_wheel
 
 setup(
-    version="1.2.7",
+    version="1.3.8",
     ext_modules=ext_modules,
     cmdclass=cmdclass_dict,
     package_data={'addernet': ['src/*.c', 'src/*.h', 'src/*.cu']}

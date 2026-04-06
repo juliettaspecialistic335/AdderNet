@@ -26,6 +26,12 @@ _LIB_NAMES = [
     "libaddernet_hdc.so",
 ]
 
+_CUDA_LIB_NAMES = [
+    os.path.join(_HERE, "libaddernet_cuda.so"),
+    os.path.join(_BUILD, "libaddernet_cuda.so"),
+    "libaddernet_cuda.so",
+]
+
 _lib = None
 for _name in _LIB_NAMES:
     try:
@@ -42,15 +48,170 @@ if _lib is None:
 
 # ---- Optional CUDA Native library ----
 
+import subprocess as _subprocess
+from shutil import which as _which
+
+
+def _find_sources():
+    """Locate the C/CUDA source tree.
+
+    Handles:
+      1. site-packages install: addernet/src/ (bundled during build)
+      2. repo checkout: ../src/
+      3. two levels up: ../../src/
+    Returns the src/ directory path or None."""
+    _paths = [
+        os.path.join(_HERE, "src"),          # site-packages: addernet/src/
+        os.path.join(os.path.dirname(_HERE), "src"),  # repo: ../src/
+        os.path.join(os.path.dirname(_HERE), "..", "src"),  # ../../src/
+    ]
+    for _p in _paths:
+        if os.path.isdir(_p) and os.path.isfile(os.path.join(_p, "hdc_core.h")):
+            return _p
+    return None
+
+
+def _try_build_cuda():
+    """Compile libaddernet_cuda.so directly with nvcc+gcc.
+
+    Called when no pre-built CUDA .so is found but nvcc exists on PATH.
+    Typical Colab scenario: CUDA toolkit installed after pip install."""
+    _nvcc = _which("nvcc") or _which("nvcc.bin")
+    if not _nvcc:
+        print("[AdderNet] CUDA: nvcc not found on PATH")
+        return False
+
+    print(f"[AdderNet] CUDA: found nvcc={_nvcc}")
+
+    _src_dir = _find_sources()
+    if _src_dir is None:
+        print("[AdderNet] CUDA: source directory not found")
+        return False
+    print(f"[AdderNet] CUDA: sources at {_src_dir}")
+
+    cu_src = os.path.join(_src_dir, "addernet_cuda.cu")
+    cu_batch_train = os.path.join(_src_dir, "addernet_hdc_train_cuda.cu")
+    hdc_core = os.path.join(_src_dir, "hdc_core.c")
+    hdc_lsh  = os.path.join(_src_dir, "hdc_lsh.c")
+    hdc      = os.path.join(_src_dir, "addernet_hdc.c")
+
+    if not os.path.isfile(cu_src) or not os.path.isfile(hdc_core):
+        print(f"[AdderNet] CUDA: critical files missing")
+        print(f"[AdderNet] CUDA: cu_src={os.path.isfile(cu_src)}, hdc_core={os.path.isfile(hdc_core)}")
+        return False
+
+    print("[AdderNet] Auto-compiling CUDA library...")
+    import tempfile as _tmp
+    _tmpdir = _tmp.mkdtemp(prefix="addernet_cuda_")
+    _out_so = os.path.join(_HERE, "libaddernet_cuda.so")
+
+    def _compile_obj(src, compiler="gcc", flags=None):
+        _is_nvcc = "nvcc" in compiler
+        _f = ["-O3"]
+        if _is_nvcc:
+            _f += ["-Xcompiler", "-fPIC", "-Xcompiler", "-ffast-math",
+                    "-Xcompiler", "-fopenmp"]
+        else:
+            _f += ["-fPIC", "-ffast-math", "-fopenmp", "-Wno-error"]
+        if flags:
+            _f.extend(flags)
+        _obj = os.path.join(_tmpdir, os.path.basename(src) + ".o")
+        _r = _subprocess.run(
+            [compiler] + _f + ["-c", src, "-o", _obj, "-I", _src_dir],
+            capture_output=True
+        )
+        if _r.returncode != 0:
+            _err = _r.stderr.decode('utf-8', errors='replace')
+            print(f"[AdderNet] CUDA: compile error ({compiler} {os.path.basename(src)}): {_err[:500]}")
+            raise _subprocess.CalledProcessError(_r.returncode, compiler)
+        return _obj
+
+    _objs = []
+    for _src in (hdc_core, hdc_lsh, hdc):
+        if os.path.isfile(_src):
+            try:
+                _objs.append(_compile_obj(_src))
+                print(f"[AdderNet] CUDA: compiled {os.path.basename(_src)}")
+            except _subprocess.CalledProcessError:
+                pass
+
+    if not _objs:
+        print("[AdderNet] CUDA: no CPU objects compiled")
+        return False
+
+    try:
+        print(f"[AdderNet] CUDA: compiling addernet_cuda.cu with nvcc...")
+        _cuda_obj = _compile_obj(cu_src, compiler=_nvcc)
+        _objs.append(_cuda_obj)
+        print(f"[AdderNet] CUDA: compiled addernet_cuda.cu")
+    except _subprocess.CalledProcessError:
+        return False
+
+    try:
+        print(f"[AdderNet] CUDA: compiling addernet_hdc_train_cuda.cu with nvcc...")
+        _train_obj = _compile_obj(cu_batch_train, compiler=_nvcc)
+        _objs.append(_train_obj)
+        print(f"[AdderNet] CUDA: compiled addernet_hdc_train_cuda.cu")
+    except _subprocess.CalledProcessError:
+        return False
+
+    print(f"[AdderNet] CUDA: linking {_out_so} with {len(_objs)} objects...")
+
+    try:
+        _r = _subprocess.run(
+            [_nvcc, "-shared", "-o", _out_so] + _objs +
+            ["-lm", "-lpthread", "-fopenmp", "-ldl"],
+            capture_output=True
+        )
+        if _r.returncode != 0:
+            _err = _r.stderr.decode('utf-8', errors='replace')
+            print(f"[AdderNet] CUDA: link error: {_err[:500]}")
+            return False
+    except _subprocess.CalledProcessError as e:
+        print(f"[AdderNet] CUDA: link exception: {e}")
+        return False
+
+    if not os.path.isfile(_out_so):
+        print(f"[AdderNet] CUDA: link completed but {_out_so} does not exist")
+        return False
+
+    print(f"[AdderNet] CUDA library compiled → {_out_so}")
+
+    # Load it immediately
+    global _lib_cuda, _LIB_CUDA_READY
+    try:
+        _lib_cuda = ctypes.CDLL(_out_so)
+        print(f"[AdderNet] CUDA library loaded!")
+        _LIB_CUDA_READY = True
+    except OSError as e:
+        print(f"[AdderNet] CUDA: compiled but failed to load: {e}")
+        return False
+    return True
+
+
 _lib_cuda = None
-try:
-    for _name in _LIB_NAMES:
-        _cuda_path = _name.replace("libaddernet_hdc.so", "libaddernet_cuda.so")
-        if os.path.exists(_cuda_path):
-            _lib_cuda = ctypes.CDLL(_cuda_path)
+_LIB_CUDA_READY = False
+for _cuda_name in _CUDA_LIB_NAMES:
+    if os.path.exists(_cuda_name):
+        try:
+            _lib_cuda = ctypes.CDLL(_cuda_name)
+            print(f"[AdderNet] CUDA library loaded from {_cuda_name}")
+            _LIB_CUDA_READY = True
             break
-except OSError:
-    pass
+        except OSError as e:
+            pass
+
+if not _LIB_CUDA_READY:
+    if _try_build_cuda():
+        for _cuda_name in _CUDA_LIB_NAMES:
+            if os.path.exists(_cuda_name):
+                try:
+                    _lib_cuda = ctypes.CDLL(_cuda_name)
+                    print(f"[AdderNet] Auto-compiled CUDA library loaded from {_cuda_name}")
+                    _LIB_CUDA_READY = True
+                    break
+                except OSError:
+                    pass
 
 # ---- Opaque pointer type ----
 
@@ -398,19 +559,38 @@ class AdderNetHDC:
                 verbose_level = 0
 
             epochs_run = ctypes.c_int(0)
-            _lib.an_hdc_retrain(
-                self._ptr,
-                X.ctypes.data_as(ctypes.POINTER(ctypes.c_double)),
-                y.ctypes.data_as(ctypes.POINTER(ctypes.c_int)),
-                n,
-                n_iter,
-                ctypes.c_float(lr),
-                ctypes.c_int(margin_int),
-                ctypes.c_float(regenerate),
-                ctypes.c_int(patience),
-                ctypes.c_int(verbose_level),
-                ctypes.byref(epochs_run),
-            )
+
+            # GPU training: usa retrain_cuda quando disponível
+            if self.use_gpu_training and _lib_cuda is not None:
+                _lib_cuda.an_hdc_retrain_cuda(
+                    self._ptr,
+                    X.ctypes.data_as(ctypes.POINTER(ctypes.c_double)),
+                    y.ctypes.data_as(ctypes.POINTER(ctypes.c_int)),
+                    n,
+                    n_iter,
+                    ctypes.c_float(lr),
+                    ctypes.c_int(margin_int),
+                    ctypes.c_int(patience),
+                    ctypes.c_int(verbose_level),
+                    ctypes.byref(epochs_run),
+                )
+            else:
+                if self.use_gpu_training:
+                    print("[AdderNet] Warning: use_gpu_training=True but "
+                          "libaddernet_cuda.so not found. Falling back to CPU.")
+                _lib.an_hdc_retrain(
+                    self._ptr,
+                    X.ctypes.data_as(ctypes.POINTER(ctypes.c_double)),
+                    y.ctypes.data_as(ctypes.POINTER(ctypes.c_int)),
+                    n,
+                    n_iter,
+                    ctypes.c_float(lr),
+                    ctypes.c_int(margin_int),
+                    ctypes.c_float(regenerate),
+                    ctypes.c_int(patience),
+                    ctypes.c_int(verbose_level),
+                    ctypes.byref(epochs_run),
+                )
 
             # Compute final accuracies on train/val split
             n_val = max(1, n // 4)
