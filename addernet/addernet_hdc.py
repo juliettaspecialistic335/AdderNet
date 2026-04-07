@@ -201,79 +201,98 @@ def _try_build_cuda():
     return True
 
 
-# ---- CUDA 2026: Capability-based kernel selection ----
-try:
-    from .cuda_detector import CUDADetector
-    _cuda_detector = CUDADetector()
-    _cuda_detector.detect()
-    _capability_int = _cuda_detector.get_capability_int()
-    _kernel_variant = _cuda_detector.get_best_kernel_variant()
-    _log(f"[AdderNet 2026] Detected: {_kernel_variant} (capability={_capability_int})")
-except Exception as e:
-    _cuda_detector = None
-    _capability_int = None
-    _kernel_variant = 'legacy'
+# ---- CUDA 2026: Capability-based kernel selection (lazy) ----
+_cuda_detector = None
+_capability_int = None
+_kernel_variant = 'legacy'
 
-# ---- Library loading with variant support ----
+def _ensure_cuda_detected():
+    """Lazy CUDA detection, only when needed and if verbose is enabled."""
+    global _cuda_detector, _capability_int, _kernel_variant
+    if _cuda_detector is not None:
+        return
+    try:
+        from .cuda_detector import CUDADetector
+        _cuda_detector = CUDADetector()
+        _cuda_detector.detect()
+        _capability_int = _cuda_detector.get_capability_int()
+        _kernel_variant = _cuda_detector.get_best_kernel_variant()
+        _log(f"[AdderNet 2026] Detected: {_kernel_variant} (capability={_capability_int})")
+    except Exception as e:
+        _cuda_detector = None
+        _capability_int = None
+        _kernel_variant = 'legacy'
+
+# ---- Library loading with variant support (lazy) ----
 _lib_cuda = None
 _lib_cuda_2026 = None
 _LIB_CUDA_READY = False
 _CUDA_VARIANT = None
+_cuda_loading_attempted = False
 
-# Try 2026 cooperative kernel (ampere/turing specific retrain kernel)
-# Also accept 'legacy' if the 2026 .so file exists — it compiles for sm_75+sm_80
-if _kernel_variant in ['ampere', 'turing']:
-    _CUDA_2026_NAMES = [
-        os.path.join(_HERE, f"libaddernet_cuda_{_kernel_variant}.so"),
-        os.path.join(_HERE, "libaddernet_cuda_2026.so"),
-    ]
-    for _cuda_name in _CUDA_2026_NAMES:
-        if os.path.exists(_cuda_name):
+def _ensure_cuda_loaded():
+    """Lazy loading of CUDA libraries and detection."""
+    global _lib_cuda, _lib_cuda_2026, _LIB_CUDA_READY, _CUDA_VARIANT, _cuda_loading_attempted
+    if _cuda_loading_attempted:
+        return
+    _cuda_loading_attempted = True
+
+    # Ensure CUDA detection runs before checking variant
+    _ensure_cuda_detected()
+
+    # Try 2026 cooperative kernel (ampere/turing specific retrain kernel)
+    # Also accept 'legacy' if the 2026 .so file exists — it compiles for sm_75+sm_80
+    if _kernel_variant in ['ampere', 'turing']:
+        _CUDA_2026_NAMES = [
+            os.path.join(_HERE, f"libaddernet_cuda_{_kernel_variant}.so"),
+            os.path.join(_HERE, "libaddernet_cuda_2026.so"),
+        ]
+        for _cuda_name in _CUDA_2026_NAMES:
+            if os.path.exists(_cuda_name):
+                try:
+                    _lib_cuda_2026 = ctypes.CDLL(_cuda_name)
+                    _log(f"[AdderNet 2026] Loaded cooperative {_kernel_variant} kernel from {_cuda_name}")
+                    break
+                except OSError:
+                    pass
+
+    # If 2026 kernel not loaded but file exists, try loading it anyway (legacy fallback)
+    if _lib_cuda_2026 is None:
+        _generic_2026 = os.path.join(_HERE, "libaddernet_cuda_2026.so")
+        if os.path.exists(_generic_2026):
             try:
-                _lib_cuda_2026 = ctypes.CDLL(_cuda_name)
-                _log(f"[AdderNet 2026] Loaded cooperative {_kernel_variant} kernel from {_cuda_name}")
-                break
+                _lib_cuda_2026 = ctypes.CDLL(_generic_2026)
+                _log(f"[AdderNet 2026] Loaded generic 2026 kernel (legacy mode) from {_generic_2026}")
             except OSError:
                 pass
 
-# If 2026 kernel not loaded but file exists, try loading it anyway (legacy fallback)
-if _lib_cuda_2026 is None:
-    _generic_2026 = os.path.join(_HERE, "libaddernet_cuda_2026.so")
-    if os.path.exists(_generic_2026):
-        try:
-            _lib_cuda_2026 = ctypes.CDLL(_generic_2026)
-            _log(f"[AdderNet 2026] Loaded generic 2026 kernel (legacy mode) from {_generic_2026}")
-        except OSError:
-            pass
-
-# Load generic CUDA (always needed for inference)
-
-# Fallback to generic CUDA
-if not _LIB_CUDA_READY:
-    for _cuda_name in _CUDA_LIB_NAMES:
-        if os.path.exists(_cuda_name):
-            try:
-                _lib_cuda = ctypes.CDLL(_cuda_name)
-                _log(f"[AdderNet] CUDA library loaded from {_cuda_name}")
-                _LIB_CUDA_READY = True
-                _CUDA_VARIANT = 'generic'
-                break
-            except OSError:
-                pass
-
-# Try building if not found
-if not _LIB_CUDA_READY:
-    if _try_build_cuda():
+    # Load generic CUDA (always needed for inference)
+    # Fallback to generic CUDA
+    if not _LIB_CUDA_READY:
         for _cuda_name in _CUDA_LIB_NAMES:
             if os.path.exists(_cuda_name):
                 try:
                     _lib_cuda = ctypes.CDLL(_cuda_name)
-                    _log(f"[AdderNet] Auto-compiled CUDA library loaded from {_cuda_name}")
+                    _log(f"[AdderNet] CUDA library loaded from {_cuda_name}")
                     _LIB_CUDA_READY = True
                     _CUDA_VARIANT = 'generic'
                     break
                 except OSError:
                     pass
+
+    # Try building if not found
+    if not _LIB_CUDA_READY:
+        if _try_build_cuda():
+            for _cuda_name in _CUDA_LIB_NAMES:
+                if os.path.exists(_cuda_name):
+                    try:
+                        _lib_cuda = ctypes.CDLL(_cuda_name)
+                        _log(f"[AdderNet] Auto-compiled CUDA library loaded from {_cuda_name}")
+                        _LIB_CUDA_READY = True
+                        _CUDA_VARIANT = 'generic'
+                        break
+                    except OSError:
+                        pass
 
 # ---- Opaque pointer type ----
 
@@ -625,6 +644,7 @@ class AdderNetHDC:
             # GPU training: variant selection based on capability
             _used_gpu = False
             if self.use_gpu_training:
+                _ensure_cuda_loaded()
                 _selected_kernel = None
 
                 # Try 2026 cooperative kernel (ampere/turing)

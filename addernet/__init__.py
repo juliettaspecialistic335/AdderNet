@@ -10,23 +10,38 @@ _HERE = Path(__file__).parent
 _ADDERNET_VERBOSE = os.environ.get("ADDERNET_VERBOSE", "1") == "1"
 
 def set_verbose(enabled: bool):
-    """Enable or disable verbose logging output."""
+    """Enable or disable verbose logging output.
+    
+    Note: Must be called BEFORE importing AdderNetLayer/AdderNetHDC
+    to prevent CUDA detection logs. Better to use ADDERNET_VERBOSE env var.
+    """
     global _ADDERNET_VERBOSE
     _ADDERNET_VERBOSE = enabled
+    # Also set env var for child modules to see
+    os.environ["ADDERNET_VERBOSE"] = "1" if enabled else "0"
 
 def is_verbose() -> bool:
     """Check if verbose logging is enabled."""
     return _ADDERNET_VERBOSE
 
-# CUDA 2026 Detection System
-try:
-    from .cuda_detector import CUDADetector
-    _cuda_detector = CUDADetector()
-    _cuda_detector.detect()
-    if is_verbose():
-        print(f"[AdderNet 2026] {_cuda_detector}")
-except Exception:
-    _cuda_detector = None
+# CUDA 2026 Detection System (lazy - only runs when explicitly requested)
+_cuda_detector = None
+_cuda_detection_ran = False
+
+def _try_detect_cuda():
+    """Lazy CUDA detection, only runs once."""
+    global _cuda_detector, _cuda_detection_ran
+    if _cuda_detection_ran:
+        return
+    _cuda_detection_ran = True
+    try:
+        from .cuda_detector import CUDADetector
+        _cuda_detector = CUDADetector()
+        _cuda_detector.detect()
+        if is_verbose():
+            print(f"[AdderNet 2026] {_cuda_detector}")
+    except Exception:
+        pass
 
 if sys.platform == "darwin":
     _lib_hdc_name = "libaddernet_hdc.dylib"
@@ -126,10 +141,12 @@ from .boost import AdderBoost
 from .attention import AdderAttention
 
 # Export detection info
-if _cuda_detector:
-    def get_cuda_info():
-        """Get CUDA detection information."""
+def get_cuda_info():
+    """Get CUDA detection information."""
+    _try_detect_cuda()
+    if _cuda_detector:
         return _cuda_detector.to_dict()
+    return None
 
 AnHdcModel = AdderNetHDC
 

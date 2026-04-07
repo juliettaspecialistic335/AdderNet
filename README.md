@@ -90,21 +90,21 @@ pip install -e .
 
 Para silenciar os logs de detecção de CUDA e build (ideal para scripts e produção):
 
-```python
-from addernet import AdderNetLayer, set_verbose
-
-# Desabilitar logs
-set_verbose(False)
-
-# Agora os imports e treinos não imprimem nada no console
-rede = AdderNetLayer(size=256)
-```
-
-Você também pode usar a variável de ambiente `ADDERNET_VERBOSE=0`:
-
+**Método 1 — Variável de ambiente (recomendado):**
 ```bash
 ADDERNET_VERBOSE=0 python main.py
 ```
+
+**Método 2 — No código (antes dos imports):**
+```python
+import addernet
+addernet.set_verbose(False)
+
+from addernet import AdderNetLayer
+# Nenhum log será exibido
+```
+
+⚠️ **Importante**: `set_verbose(False)` deve ser chamado **antes** de importar `AdderNetLayer` ou `AdderNetHDC`, pois a detecção de CUDA ocorre durante o carregamento desses módulos.
 
 ## Uso — AdderNetLayer (uma variável)
 
