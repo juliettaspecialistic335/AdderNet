@@ -11,10 +11,17 @@
 #define ADDERNET_H
 
 #include <stdalign.h>
+#include <stdlib.h>
 
 #ifdef __cplusplus
 extern "C" {
 #endif
+
+/* Safe aligned_alloc: pads size to multiple of alignment (C11 compliance) */
+static inline void *an_aligned_alloc(size_t alignment, size_t size) {
+    size_t padded = (size + alignment - 1) & ~(alignment - 1);
+    return aligned_alloc(alignment, padded);
+}
 
 /*
  * Table must be power-of-2 sized for AND-mask indexing.

@@ -50,8 +50,8 @@ static CUfunction batch_fn = NULL;
 static void *batch_ctx = NULL;
 
 /* Batch kernel uses D=1000 for manageable stack */
-#define BATCH_D      1000
-#define BATCH_WORDS  (BATCH_D / 64)   /* 16 */
+#define m->hv_dim      1000
+#define m->hv_words  (m->hv_dim / 64)   /* 16 */
 
 #define S_(x) #x
 #define S(x) S_(x)
@@ -134,11 +134,11 @@ static const char batch_ptx[] =
     "    mov.u32 %r13, 0;  // hamming[8]\n"
     "    mov.u32 %r14, 0;  // hamming[9]\n"
     "\n"
-    "    // For each word w in [0, BATCH_WORDS)\n"
+    "    // For each word w in [0, m->hv_words)\n"
     "    mov.u32 %r15, 0;  // word counter\n"
     "\n"
     "WORD_LOOP:\n"
-    "    setp.ge.u32 %p1, %r15, " S(BATCH_WORDS) ";\n"
+    "    setp.ge.u32 %p1, %r15, " S(m->hv_words) ";\n"
     "    @%p1 bra FIND_BEST;\n"
     "\n"
     "    // Count bits in this word across all vars\n"
@@ -272,7 +272,7 @@ static const char batch_ptx[] =
     "    add.u32 %r5, %r5, %r28;\n"
     "\n"
     "    // Class 1\n"
-    "    mov.u32 %r28, " S(BATCH_WORDS * 8) ";\n"
+    "    mov.u32 %r28, " S(m->hv_words * 8) ";\n"
     "    mov.u32 %r29, %r15;\n"
     "    mul.lo.u32 %r29, %r29, 8;\n"
     "    add.u32 %r28, %r28, %r29;\n"
@@ -289,7 +289,7 @@ static const char batch_ptx[] =
     "    add.u32 %r6, %r6, %r28;\n"
     "\n"
     "    // Class 2\n"
-    "    mov.u32 %r28, " S(2 * BATCH_WORDS * 8) ";\n"
+    "    mov.u32 %r28, " S(2 * m->hv_words * 8) ";\n"
     "    mov.u32 %r29, %r15;\n"
     "    mul.lo.u32 %r29, %r29, 8;\n"
     "    add.u32 %r28, %r28, %r29;\n"
@@ -306,7 +306,7 @@ static const char batch_ptx[] =
     "    add.u32 %r7, %r7, %r28;\n"
     "\n"
     "    // Classes 3-9 (same pattern)\n"
-    "    mov.u32 %r28, " S(3 * BATCH_WORDS * 8) ";\n"
+    "    mov.u32 %r28, " S(3 * m->hv_words * 8) ";\n"
     "    mov.u32 %r29, %r15; mul.lo.u32 %r29, %r29, 8; add.u32 %r28, %r28, %r29;\n"
     "    cvt.u64.u32 %rd10, %r28; add.u64 %rd10, %rd1, %rd10;\n"
     "    ld.global.u64 %rd11, [%rd10];\n"
@@ -315,7 +315,7 @@ static const char batch_ptx[] =
     "    popc.b32 %r29, %r29; popc.b32 %r28, %r28;\n"
     "    add.u32 %r8, %r8, %r29; add.u32 %r8, %r8, %r28;\n"
     "\n"
-    "    mov.u32 %r28, " S(4 * BATCH_WORDS * 8) ";\n"
+    "    mov.u32 %r28, " S(4 * m->hv_words * 8) ";\n"
     "    mov.u32 %r29, %r15; mul.lo.u32 %r29, %r29, 8; add.u32 %r28, %r28, %r29;\n"
     "    cvt.u64.u32 %rd10, %r28; add.u64 %rd10, %rd1, %rd10;\n"
     "    ld.global.u64 %rd11, [%rd10];\n"
@@ -324,7 +324,7 @@ static const char batch_ptx[] =
     "    popc.b32 %r29, %r29; popc.b32 %r28, %r28;\n"
     "    add.u32 %r9, %r9, %r29; add.u32 %r9, %r9, %r28;\n"
     "\n"
-    "    mov.u32 %r28, " S(5 * BATCH_WORDS * 8) ";\n"
+    "    mov.u32 %r28, " S(5 * m->hv_words * 8) ";\n"
     "    mov.u32 %r29, %r15; mul.lo.u32 %r29, %r29, 8; add.u32 %r28, %r28, %r29;\n"
     "    cvt.u64.u32 %rd10, %r28; add.u64 %rd10, %rd1, %rd10;\n"
     "    ld.global.u64 %rd11, [%rd10];\n"
@@ -333,7 +333,7 @@ static const char batch_ptx[] =
     "    popc.b32 %r29, %r29; popc.b32 %r28, %r28;\n"
     "    add.u32 %r10, %r10, %r29; add.u32 %r10, %r10, %r28;\n"
     "\n"
-    "    mov.u32 %r28, " S(6 * BATCH_WORDS * 8) ";\n"
+    "    mov.u32 %r28, " S(6 * m->hv_words * 8) ";\n"
     "    mov.u32 %r29, %r15; mul.lo.u32 %r29, %r29, 8; add.u32 %r28, %r28, %r29;\n"
     "    cvt.u64.u32 %rd10, %r28; add.u64 %rd10, %rd1, %rd10;\n"
     "    ld.global.u64 %rd11, [%rd10];\n"
@@ -342,7 +342,7 @@ static const char batch_ptx[] =
     "    popc.b32 %r29, %r29; popc.b32 %r28, %r28;\n"
     "    add.u32 %r11, %r11, %r29; add.u32 %r11, %r11, %r28;\n"
     "\n"
-    "    mov.u32 %r28, " S(7 * BATCH_WORDS * 8) ";\n"
+    "    mov.u32 %r28, " S(7 * m->hv_words * 8) ";\n"
     "    mov.u32 %r29, %r15; mul.lo.u32 %r29, %r29, 8; add.u32 %r28, %r28, %r29;\n"
     "    cvt.u64.u32 %rd10, %r28; add.u64 %rd10, %rd1, %rd10;\n"
     "    ld.global.u64 %rd11, [%rd10];\n"
@@ -351,7 +351,7 @@ static const char batch_ptx[] =
     "    popc.b32 %r29, %r29; popc.b32 %r28, %r28;\n"
     "    add.u32 %r12, %r12, %r29; add.u32 %r12, %r12, %r28;\n"
     "\n"
-    "    mov.u32 %r28, " S(8 * BATCH_WORDS * 8) ";\n"
+    "    mov.u32 %r28, " S(8 * m->hv_words * 8) ";\n"
     "    mov.u32 %r29, %r15; mul.lo.u32 %r29, %r29, 8; add.u32 %r28, %r28, %r29;\n"
     "    cvt.u64.u32 %rd10, %r28; add.u64 %rd10, %rd1, %rd10;\n"
     "    ld.global.u64 %rd11, [%rd10];\n"
@@ -360,7 +360,7 @@ static const char batch_ptx[] =
     "    popc.b32 %r29, %r29; popc.b32 %r28, %r28;\n"
     "    add.u32 %r13, %r13, %r29; add.u32 %r13, %r13, %r28;\n"
     "\n"
-    "    mov.u32 %r28, " S(9 * BATCH_WORDS * 8) ";\n"
+    "    mov.u32 %r28, " S(9 * m->hv_words * 8) ";\n"
     "    mov.u32 %r29, %r15; mul.lo.u32 %r29, %r29, 8; add.u32 %r28, %r28, %r29;\n"
     "    cvt.u64.u32 %rd10, %r28; add.u64 %rd10, %rd1, %rd10;\n"
     "    ld.global.u64 %rd11, [%rd10];\n"
@@ -466,20 +466,20 @@ static int *compute_bins(an_hdc_model *m, const double *X, int N) {
     return bins;
 }
 
-/* ---- Pack codebook to flat uint64_t array (D=BATCH_D) ---- */
+/* ---- Pack codebook to flat uint64_t array (D=m->hv_dim) ---- */
 /* The model's codebook uses the compiled HDC_WORDS (e.g. 157 for D=10000).
- * Our kernel uses BATCH_WORDS (16 for D=1000).
+ * Our kernel uses m->hv_words (16 for D=1000).
  * We need to generate codebook entries at D=1000.
  * Strategy: re-encode training data at D=1000 and bundle.
- * For simplicity, just truncate the existing codebook to BATCH_WORDS. */
+ * For simplicity, just truncate the existing codebook to m->hv_words. */
 static uint64_t *pack_codebook(an_hdc_model *m) {
     int nc = m->n_classes;
-    int nw = BATCH_WORDS;  /* 16 for D=1000 */
+    int nw = m->hv_words;  /* 16 for D=1000 */
     uint64_t *cb = (uint64_t *)malloc(nc * nw * sizeof(uint64_t));
     if (!cb) return NULL;
 
     /* The model's hv_t has HDC_WORDS words (157 for D=10000).
-     * We truncate to BATCH_WORDS (16). This loses information but
+     * We truncate to m->hv_words (16). This loses information but
      * gives a quick test. For production, re-train at D=1000. */
     for (int c = 0; c < nc; c++) {
         for (int w = 0; w < nw && w < HDC_WORDS; w++) {
@@ -515,7 +515,7 @@ int an_hdc_predict_batch_cuda(an_hdc_model *m, const double *X, int *y_pred, int
 
     /* Allocate GPU memory */
     size_t bins_bytes = (size_t)N * nv * sizeof(int);
-    size_t cb_bytes = (size_t)nc * BATCH_WORDS * sizeof(uint64_t);
+    size_t cb_bytes = (size_t)nc * m->hv_words * sizeof(uint64_t);
     size_t pred_bytes = (size_t)N * sizeof(int);
 
     CUdeviceptr d_bins, d_cb, d_pred;

@@ -2,10 +2,19 @@
 #define HDC_CORE_H
 
 #include <stdint.h>
+#include <stdlib.h>
 
 #ifdef __cplusplus
 extern "C" {
 #endif
+
+/* Safe aligned_alloc wrapper: pads size to multiple of alignment.
+ * C11 requires size to be a multiple of alignment, otherwise returns NULL.
+ * This wraps it to always round up, preventing silent NULL returns. */
+static inline void *safe_aligned_alloc(size_t alignment, size_t size) {
+    size_t padded = (size + alignment - 1) & ~(alignment - 1);
+    return aligned_alloc(alignment, padded);
+}
 
 typedef uint64_t* hv_t;
 typedef const uint64_t* const_hv_t;

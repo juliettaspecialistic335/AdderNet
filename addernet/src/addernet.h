@@ -11,10 +11,17 @@
 #define ADDERNET_H
 
 #include <stdalign.h>
+#include <stdlib.h>
 
 #ifdef __cplusplus
 extern "C" {
 #endif
+
+/* Safe aligned_alloc: pads size to multiple of alignment (C11 compliance) */
+static inline void *an_aligned_alloc(size_t alignment, size_t size) {
+    size_t padded = (size + alignment - 1) & ~(alignment - 1);
+    return aligned_alloc(alignment, padded);
+}
 
 /*
  * Table must be power-of-2 sized for AND-mask indexing.
@@ -128,6 +135,16 @@ int    an_get_bias(const an_layer *layer);
 int    an_get_input_min(const an_layer *layer);
 int    an_get_input_max(const an_layer *layer);
 double an_get_lr(const an_layer *layer);
+
+/*
+ * an_layer_mmap_load — Memory-map a saved LUT file for zero-copy loading.
+ *
+ *   Opens the file read-only and maps it with MAP_SHARED.
+ *   The OS manages paging — no full copy to RAM.
+ *   Returns: pointer to mapped data, or NULL on failure.
+ *   Linux only. Caller should munmap() when done.
+ */
+void *an_layer_mmap_load(const char *path);
 
 #ifdef __cplusplus
 }

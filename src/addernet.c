@@ -93,7 +93,7 @@ an_layer *an_layer_create(int size, int bias, int input_min, int input_max, doub
     if (size > AN_TABLE_SIZE)
         return NULL;
 
-    an_layer *layer = (an_layer *)aligned_alloc(64, sizeof(an_layer));
+    an_layer *layer = (an_layer *)an_aligned_alloc(64, sizeof(an_layer));
     if (!layer) return NULL;
 
     layer->size      = size;

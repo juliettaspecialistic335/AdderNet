@@ -74,13 +74,13 @@ an_hdc_model *an_hdc_create(int n_vars, int n_classes, int table_size, const int
     }
 
     /* Position hypervectors: one random HV per variable (role vector). */
-    m->position_hvs = (uint64_t *)aligned_alloc(64, n_vars * m->hv_words * sizeof(uint64_t));
+    m->position_hvs = (uint64_t *)safe_aligned_alloc(64, n_vars * m->hv_words * sizeof(uint64_t));
     if (!m->position_hvs) goto fail;
     for (int v = 0; v < n_vars; v++)
         hv_random(&m->position_hvs[v * m->hv_words], m->hv_words, m->hv_dim);
 
     /* Codebook: n_classes prototypes (zeroed, trained later) */
-    m->codebook = (uint64_t *)aligned_alloc(64, n_classes * m->hv_words * sizeof(uint64_t));
+    m->codebook = (uint64_t *)safe_aligned_alloc(64, n_classes * m->hv_words * sizeof(uint64_t));
     if (!m->codebook) goto fail;
     for (int c = 0; c < n_classes; c++)
         hv_zero(&m->codebook[c * m->hv_words], m->hv_words);
@@ -130,13 +130,13 @@ void an_hdc_train(an_hdc_model *m, const double *X, const int *y, int n_samples)
     /* Allocate per-class arrays */
     for (int c = 0; c < m->n_classes; c++) {
         class_hvs[c] = (counts[c] > 0)
-            ? (uint64_t *)aligned_alloc(64, counts[c] * m->hv_words * sizeof(uint64_t))
+            ? (uint64_t *)safe_aligned_alloc(64, counts[c] * m->hv_words * sizeof(uint64_t))
             : NULL;
     }
     free(counts);
 
     /* Encode all samples: bind(position, value) for each var, then bundle all pairs */
-    uint64_t *pairs = (uint64_t *)aligned_alloc(64,
+    uint64_t *pairs = (uint64_t *)safe_aligned_alloc(64,
         (m->n_vars + m->n_interaction_pairs > 0 ? m->n_vars + m->n_interaction_pairs : 1) * m->hv_words * sizeof(uint64_t));
     uint64_t sample_hv[m->hv_words];
     for (int i = 0; i < n_samples; i++) {
@@ -276,14 +276,14 @@ int an_hdc_retrain(an_hdc_model *m, const double *X, const int *y,
     if (n_val < 1 && n_samples >= 2) { n_val = 1; n_train = n_samples - 1; }
 
     /* Encode ALL samples once (train + val) */
-    uint64_t *sample_hvs = (uint64_t *)aligned_alloc(64, n_samples * m->hv_words * sizeof(uint64_t));
+    uint64_t *sample_hvs = (uint64_t *)safe_aligned_alloc(64, n_samples * m->hv_words * sizeof(uint64_t));
     if (!sample_hvs) { if (epochs_run_out) *epochs_run_out = 0;
                       return 0;
                     }
 
     int total_pairs = m->n_vars + m->n_interaction_pairs;
     if (total_pairs < 1) total_pairs = 1;
-    uint64_t *pairs = (uint64_t *)aligned_alloc(64, total_pairs * m->hv_words * sizeof(uint64_t));
+    uint64_t *pairs = (uint64_t *)safe_aligned_alloc(64, total_pairs * m->hv_words * sizeof(uint64_t));
     if (!pairs) { free(sample_hvs); if (epochs_run_out) *epochs_run_out = 0;
                       return 0;
                     }
@@ -331,7 +331,7 @@ int an_hdc_retrain(an_hdc_model *m, const double *X, const int *y,
                     }
 
     /* Binary codebook for fast Hamming distance computation */
-    uint64_t *cb_binary = (uint64_t *)aligned_alloc(64, m->n_classes * m->hv_words * sizeof(uint64_t));
+    uint64_t *cb_binary = (uint64_t *)safe_aligned_alloc(64, m->n_classes * m->hv_words * sizeof(uint64_t));
     if (!cb_binary) { free(cb_counts); free(y_pred); free(sample_hvs);
                       if (epochs_run_out) *epochs_run_out = 0;
                       return 0;
@@ -365,7 +365,7 @@ int an_hdc_retrain(an_hdc_model *m, const double *X, const int *y,
     int no_improve = 0;
 
     /* Save best codebook state */
-    uint64_t *cb_best = (uint64_t *)aligned_alloc(64, m->n_classes * m->hv_words * sizeof(uint64_t));
+    uint64_t *cb_best = (uint64_t *)safe_aligned_alloc(64, m->n_classes * m->hv_words * sizeof(uint64_t));
     if (!cb_best) {
         free(variance); free(cb_binary); free(cb_counts); free(y_pred); free(sample_hvs);
         if (epochs_run_out) *epochs_run_out = 0;
@@ -514,7 +514,7 @@ int an_hdc_retrain(an_hdc_model *m, const double *X, const int *y,
 
                 /* Re-encode samples for regenerated dimension */
                 {
-                    uint64_t *pairs_regen = (uint64_t *)aligned_alloc(64,
+                    uint64_t *pairs_regen = (uint64_t *)safe_aligned_alloc(64,
                         total_pairs * m->hv_words * sizeof(uint64_t));
                     if (pairs_regen) {
                         for (int s = 0; s < n_samples; s++) {
@@ -619,7 +619,7 @@ int an_hdc_predict(const an_hdc_model *m, const double *x) {
     /* Cache per-variable encoded HVs for interaction reuse */
     uint64_t *var_hvs = NULL;
     if (m->n_interaction_pairs > 0) {
-        var_hvs = (uint64_t *)aligned_alloc(64, m->n_vars * m->hv_words * sizeof(uint64_t));
+        var_hvs = (uint64_t *)safe_aligned_alloc(64, m->n_vars * m->hv_words * sizeof(uint64_t));
     }
 
     /* Encode each variable: bind(pos, value) and accumulate bit counts */

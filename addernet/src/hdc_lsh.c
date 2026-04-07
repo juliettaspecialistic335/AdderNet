@@ -1,92 +1,93 @@
-#include "hdc_lsh.h"
 #include <stdlib.h>
 #include <string.h>
 #include <stdio.h>
+#include "hdc_lsh.h"
 
-hdc_lsh_t* hdc_lsh_build_ex(const hv_t *codebook, int n_classes, int k, int l) {
-    if (k > LSH_MAX_K || l > LSH_MAX_L || k <= 0 || l <= 0) return NULL;
-    
-    hdc_lsh_t *lsh = (hdc_lsh_t *)calloc(1, sizeof(hdc_lsh_t));
-    if (!lsh) return NULL;
-    lsh->n_classes = n_classes;
+hdc_lsh_t* hdc_lsh_build_ex(const uint64_t *codebook, int n_classes, int k, int l, int hv_words, int hv_dim) {
+    hdc_lsh_t *lsh = (hdc_lsh_t *)malloc(sizeof(hdc_lsh_t));
     lsh->k = k;
     lsh->l = l;
+    lsh->n_classes = n_classes;
+    lsh->hv_words = hv_words;
+    lsh->hv_dim = hv_dim;
     
-    int n_buckets = 1 << k;
+    lsh->codebook = (uint64_t *)malloc(n_classes * hv_words * sizeof(uint64_t));
+    for (int i = 0; i < n_classes * hv_words; i++) lsh->codebook[i] = codebook[i];
 
+    lsh->bit_indices = (int **)malloc(l * sizeof(int *));
     for (int tbl = 0; tbl < l; tbl++) {
+        lsh->bit_indices[tbl] = (int *)malloc(k * sizeof(int));
         for (int bit = 0; bit < k; bit++) {
-            lsh->bit_indices[tbl][bit] = rand() % HDC_DIM;
+            lsh->bit_indices[tbl][bit] = rand() % hv_dim;
         }
-        lsh->buckets[tbl] = (int **)calloc(n_buckets, sizeof(int *));
-        lsh->bucket_sizes[tbl] = (int *)calloc(n_buckets, sizeof(int));
     }
 
-    for (int c = 0; c < n_classes; c++) {
-        for (int tbl = 0; tbl < l; tbl++) {
-            unsigned int hash = 0;
+    int n_buckets = 1 << k;
+    lsh->hash_tables = (int **)malloc(l * sizeof(int *));
+    for (int tbl = 0; tbl < l; tbl++) {
+        lsh->hash_tables[tbl] = (int *)malloc(n_buckets * sizeof(int));
+        for (int i = 0; i < n_buckets; i++) lsh->hash_tables[tbl][i] = -1;
+
+        for (int c = 0; c < n_classes; c++) {
+            int hash_val = 0;
             for (int bit = 0; bit < k; bit++) {
                 int bit_idx = lsh->bit_indices[tbl][bit];
-                int word_idx = bit_idx >> 6;
-                int bit_pos = bit_idx & 63;
-                int bit_val = (codebook[c][word_idx] >> bit_pos) & 1U;
-                hash |= (bit_val << bit);
+                int word_idx = bit_idx / 64;
+                int bit_pos = bit_idx % 64;
+                int bit_val = (lsh->codebook[c * hv_words + word_idx] >> bit_pos) & 1U;
+                if (bit_val) {
+                    hash_val |= (1 << bit);
+                }
             }
-            int sz = lsh->bucket_sizes[tbl][hash];
-            int *new_bucket = (int *)realloc(lsh->buckets[tbl][hash], (sz + 1) * sizeof(int));
-            if (new_bucket) {
-                lsh->buckets[tbl][hash] = new_bucket;
-                lsh->buckets[tbl][hash][sz] = c;
-                lsh->bucket_sizes[tbl][hash]++;
+            if (lsh->hash_tables[tbl][hash_val] == -1) {
+                lsh->hash_tables[tbl][hash_val] = c;
+            } else {
+                int curr_c = lsh->hash_tables[tbl][hash_val];
+                int dist_curr = hv_hamming(&lsh->codebook[curr_c * hv_words], &lsh->codebook[c * hv_words], hv_words);
+                if (dist_curr == 0) {
+                    lsh->hash_tables[tbl][hash_val] = c;
+                }
             }
         }
     }
     return lsh;
 }
 
-int hdc_lsh_query(const hdc_lsh_t *lsh, const hv_t query,
-                  int *out_candidates, int max_candidates) {
-    char *seen = (char *)calloc(lsh->n_classes, sizeof(char));
-    if (!seen) return 0;
-    
-    int n_candidates = 0;
-    int k = lsh->k;
-    int l = lsh->l;
-    int n_buckets = 1 << k;
+int hdc_lsh_query(const hdc_lsh_t *lsh, const uint64_t* query, int *candidates, int max_candidates, int hv_words) {
+    (void)hv_words;  /* unused — hash derived from codebook, not raw HV */
+    int n_cand = 0;
+    int *visited = (int *)calloc(lsh->n_classes, sizeof(int));
 
-    for (int tbl = 0; tbl < l; tbl++) {
-        unsigned int hash = 0;
-        for (int bit = 0; bit < k; bit++) {
+    for (int tbl = 0; tbl < lsh->l; tbl++) {
+        int hash_val = 0;
+        for (int bit = 0; bit < lsh->k; bit++) {
             int bit_idx = lsh->bit_indices[tbl][bit];
-            int word_idx = bit_idx >> 6;
-            int bit_pos = bit_idx & 63;
+            int word_idx = bit_idx / 64;
+            int bit_pos = bit_idx % 64;
             int bit_val = (query[word_idx] >> bit_pos) & 1U;
-            hash |= (bit_val << bit);
-        }
-
-        for (int i = 0; i < lsh->bucket_sizes[tbl][hash]; i++) {
-            int c = lsh->buckets[tbl][hash][i];
-            if (!seen[c] && n_candidates < max_candidates) {
-                seen[c] = 1;
-                out_candidates[n_candidates++] = c;
+            if (bit_val) {
+                hash_val |= (1 << bit);
             }
         }
+        int c = lsh->hash_tables[tbl][hash_val];
+        if (c != -1 && !visited[c]) {
+            visited[c] = 1;
+            candidates[n_cand++] = c;
+            if (n_cand >= max_candidates) break;
+        }
     }
-    free(seen);
-    return n_candidates;
+    free(visited);
+    return n_cand;
 }
 
 void hdc_lsh_free(hdc_lsh_t *lsh) {
     if (!lsh) return;
-    int n_buckets = 1 << lsh->k;
+    free(lsh->codebook);
     for (int tbl = 0; tbl < lsh->l; tbl++) {
-        if (lsh->buckets[tbl]) {
-            for (int b = 0; b < n_buckets; b++) {
-                free(lsh->buckets[tbl][b]);
-            }
-            free(lsh->buckets[tbl]);
-        }
-        free(lsh->bucket_sizes[tbl]);
+        free(lsh->bit_indices[tbl]);
+        free(lsh->hash_tables[tbl]);
     }
+    free(lsh->bit_indices);
+    free(lsh->hash_tables);
     free(lsh);
 }

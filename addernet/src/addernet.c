@@ -93,7 +93,7 @@ an_layer *an_layer_create(int size, int bias, int input_min, int input_max, doub
     if (size > AN_TABLE_SIZE)
         return NULL;
 
-    an_layer *layer = (an_layer *)aligned_alloc(64, sizeof(an_layer));
+    an_layer *layer = (an_layer *)an_aligned_alloc(64, sizeof(an_layer));
     if (!layer) return NULL;
 
     layer->size      = size;
@@ -156,6 +156,9 @@ int an_predict_batch(const an_layer *layer,
     if (!layer || !inputs || !outputs || n <= 0)
         return -1;
 
+#ifdef _OPENMP
+    #pragma omp parallel for schedule(static)
+#endif
     for (int i = 0; i < n; i++) {
         int idx = ((int)inputs[i] + layer->bias) & AN_TABLE_MASK;
         outputs[i] = layer->offset[idx];
@@ -226,3 +229,27 @@ int an_get_bias(const an_layer *layer) { return layer ? layer->bias : 0; }
 int an_get_input_min(const an_layer *layer) { return layer ? layer->input_min : 0; }
 int an_get_input_max(const an_layer *layer) { return layer ? layer->input_max : 0; }
 double an_get_lr(const an_layer *layer) { return layer ? layer->lr : 0.0; }
+
+/* ---- P3B: mmap for LUT loading ---- */
+#ifdef __linux__
+#include <sys/mman.h>
+#include <sys/stat.h>
+#include <fcntl.h>
+#include <unistd.h>
+
+void *an_layer_mmap_load(const char *path) {
+    if (!path) return NULL;
+
+    int fd = open(path, O_RDONLY);
+    if (fd < 0) return NULL;
+
+    struct stat st;
+    if (fstat(fd, &st) < 0) { close(fd); return NULL; }
+
+    void *mapped = mmap(NULL, st.st_size, PROT_READ, MAP_SHARED, fd, 0);
+    close(fd);
+
+    if (mapped == MAP_FAILED) return NULL;
+    return mapped;
+}
+#endif
